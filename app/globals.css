@@ -25,6 +25,10 @@
   --done: #2ba640;
   --scrim: rgba(0, 0, 0, 0.5);
   --menu-shadow: 0 4px 32px rgba(0, 0, 0, 0.1);
+  /* The sign-in page follows Google's account pages. */
+  --auth-bg: #f0f4f9;
+  --auth-card: #ffffff;
+  --field: #747775;
 }
 
 html[data-theme="dark"] {
@@ -44,6 +48,9 @@ html[data-theme="dark"] {
   --danger: #ff4e45;
   --scrim: rgba(0, 0, 0, 0.7);
   --menu-shadow: none;
+  --auth-bg: #131314;
+  --auth-card: #0e0e0e;
+  --field: #8e918f;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,6 +71,9 @@ html[data-theme="dark"] {
     --danger: #ff4e45;
     --scrim: rgba(0, 0, 0, 0.7);
     --menu-shadow: none;
+    --auth-bg: #131314;
+    --auth-card: #0e0e0e;
+    --field: #8e918f;
   }
 }
 
@@ -86,6 +96,9 @@ html[data-theme="dark"] {
   --color-done: var(--done);
   --color-scrim: var(--scrim);
   --shadow-menu: var(--menu-shadow);
+  --color-auth-bg: var(--auth-bg);
+  --color-auth-card: var(--auth-card);
+  --color-field: var(--field);
 }
 
 /* Element defaults sit in the base layer so utility classes override them. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
   useContext,
@@ -8,7 +8,6 @@ import {
   useMemo,
   useState,
   useSyncExternalStore,
-  type FormEvent,
   type ReactNode,
 } from "react";
 import type { User } from "@supabase/auth-js";
@@ -16,7 +15,6 @@ import type { User } from "@supabase/auth-js";
 import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
 import { HomeThemeProvider } from "@/components/HomeTheme";
-import { Button, inputClasses } from "@/components/ui";
 import {
   readAuthSessionHint,
   setAuthSessionHint,
@@ -43,11 +41,39 @@ export function useAuth() {
 
 const subscribeToNothing = () => () => {};
 
+const AUTH_PATH = "/login";
+
+// Where to go after signing in: the page that sent the visitor to /login, if
+// it's a page of this app, otherwise home.
+function readNextPath() {
+  try {
+    const next = new URLSearchParams(window.location.search).get("next") ?? "";
+    return next.startsWith("/") && !next.startsWith("//") && !next.startsWith(AUTH_PATH)
+      ? next
+      : "/";
+  } catch {
+    return "/";
+  }
+}
+
+function Spinner() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
+      <PageTitle />
+      <span
+        role="status"
+        aria-label="Connecting to your library"
+        className="h-8 w-8 animate-spin rounded-full border-[3px] border-chip-hover border-t-fg-muted"
+      />
+    </main>
+  );
+}
+
 export default function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const isAuthPage = pathname === AUTH_PATH;
   // The layout is static, so the session hint cookie is read in the browser.
-  // Until hydration finishes, "/" renders the sign-in form, which the inline
-  // script in app/layout.tsx hides for returning users before first paint.
   const isHydrated = useSyncExternalStore(
     subscribeToNothing,
     () => true,
@@ -120,21 +146,41 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setAuthSessionHint(null);
   };
 
+  // Signed out: every app page goes to /login (proxy.ts already does this
+  // on the server when there's no session cookie). Signed in: /login goes on.
+  useEffect(() => {
+    if (loading || authError) {
+      return;
+    }
+    if (!user && !isAuthPage) {
+      const next = `${window.location.pathname}${window.location.search}`;
+      router.replace(next === "/" ? AUTH_PATH : `${AUTH_PATH}?next=${encodeURIComponent(next)}`);
+    } else if (user && isAuthPage) {
+      router.replace(readNextPath());
+    }
+  }, [authError, isAuthPage, loading, router, user]);
+
+  if (isAuthPage) {
+    if (loading) {
+      // Returning visitors are likely signed in and about to move on; the
+      // inline script in app/layout.tsx hides the form for them meanwhile.
+      return <div data-auth-fallback="">{children}</div>;
+    }
+    return user ? <Spinner /> : <>{children}</>;
+  }
+
   if (loading) {
-    if (pathname === "/") {
+    if (isHydrated && hasStoredSession) {
       return (
         <AuthContext.Provider
           value={{ user, loading, cachedUserIdHint: storedUserIdHint, signOut }}
         >
-          {isHydrated && hasStoredSession ? (
-            <HomeThemeProvider>{children}</HomeThemeProvider>
-          ) : (
-            <AuthForm hideForStoredSession />
-          )}
+          <HomeThemeProvider>{children}</HomeThemeProvider>
         </AuthContext.Provider>
       );
     }
 
+    // Watch pages are server-rendered shells, safe to show before hydration.
     if (pathname.startsWith("/watch/") || pathname.startsWith("/course/")) {
       return (
         <AuthContext.Provider
@@ -145,16 +191,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       );
     }
 
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
-        <PageTitle />
-        <span
-          role="status"
-          aria-label="Connecting to your library"
-          className="h-8 w-8 animate-spin rounded-full border-[3px] border-chip-hover border-t-fg-muted"
-        />
-      </main>
-    );
+    return <Spinner />;
   }
 
   if (authError) {
@@ -175,183 +212,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{ user, loading, cachedUserIdHint: null, signOut }}
     >
-      {user ? <HomeThemeProvider>{children}</HomeThemeProvider> : <AuthForm />}
+      {user ? <HomeThemeProvider>{children}</HomeThemeProvider> : <Spinner />}
     </AuthContext.Provider>
-  );
-}
-
-function AuthForm({
-  hideForStoredSession = false,
-}: {
-  hideForStoredSession?: boolean;
-}) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [confirmationEmail, setConfirmationEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError("");
-    setSubmitting(true);
-
-    try {
-      const supabase = getSupabaseClient();
-      if (isSignUp) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-        });
-        if (signUpError) {
-          throw signUpError;
-        }
-        if (!data.session) {
-          setAuthSessionHint(null);
-          setConfirmationEmail(email.trim());
-        } else {
-          setAuthSessionHint(data.session.user.id);
-        }
-      } else {
-        const { data, error: signInError } =
-          await supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password,
-          });
-        if (signInError) {
-          throw signInError;
-        }
-        setAuthSessionHint(data.session?.user.id ?? null);
-      }
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Authentication failed. Please try again.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const switchMode = () => {
-    setIsSignUp((value) => !value);
-    setError("");
-  };
-
-  if (confirmationEmail) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12">
-        <PageTitle name="Check Your Inbox" />
-        <section className="w-full max-w-md rounded-xl border border-line p-8 sm:p-10">
-          <h1 className="text-3xl font-bold tracking-tight">
-            Check your inbox
-          </h1>
-          <p className="mt-4 text-base text-fg-muted">
-            Confirmation link sent to{" "}
-            <span className="font-medium text-fg">{confirmationEmail}</span>.
-          </p>
-          <Button
-            variant="primary"
-            className="mt-7 h-12 w-full"
-            onClick={() => {
-              setConfirmationEmail("");
-              setIsSignUp(false);
-              setError("");
-            }}
-          >
-            Back to sign in
-          </Button>
-        </section>
-      </main>
-    );
-  }
-
-  return (
-    <main
-      data-auth-fallback={hideForStoredSession ? "" : undefined}
-      className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12"
-    >
-      <PageTitle name={isSignUp ? "Sign Up" : "Sign In"} />
-      <section className="w-full max-w-md rounded-xl border border-line p-8 sm:p-10">
-        <h1 className="mb-8 text-3xl font-bold tracking-tight">
-          {isSignUp ? "Create account" : "Sign in"}
-        </h1>
-
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div>
-            <label
-              htmlFor="auth-email"
-              className="mb-2 block text-sm font-medium"
-            >
-              Email
-            </label>
-            <input
-              id="auth-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="name@example.com"
-              className={`${inputClasses} h-12`}
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="auth-password"
-              className="mb-2 block text-sm font-medium"
-            >
-              Password
-            </label>
-            <input
-              id="auth-password"
-              type="password"
-              autoComplete={isSignUp ? "new-password" : "current-password"}
-              minLength={6}
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={
-                isSignUp ? "Create a password" : "Enter your password"
-              }
-              className={`${inputClasses} h-12`}
-            />
-            {isSignUp ? (
-              <p className="mt-2 text-sm text-fg-muted">
-                Minimum 6 characters.
-              </p>
-            ) : null}
-          </div>
-
-          {error ? (
-            <p role="alert" className="text-sm text-danger">
-              {error}
-            </p>
-          ) : null}
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={submitting}
-            className="h-12 w-full"
-          >
-            {submitting ? "Please wait..." : isSignUp ? "Sign up" : "Sign in"}
-          </Button>
-        </form>
-
-        <p className="mt-7 border-t border-line pt-6 text-center text-sm text-fg-muted">
-          {isSignUp ? "Have an account? " : "New here? "}
-          <button
-            type="button"
-            className="font-medium text-link hover:underline"
-            onClick={switchMode}
-          >
-            {isSignUp ? "Sign in" : "Sign up"}
-          </button>
-        </p>
-      </section>
-    </main>
   );
 }
