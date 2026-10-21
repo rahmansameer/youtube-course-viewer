@@ -1,5 +1,13 @@
 export const AUTH_SESSION_HINT_COOKIE = "youtube-course-viewer-session";
 
+// The sign-in page, and the same page in "create account" mode.
+export const SIGN_IN_PATH = "/signin";
+export const SIGN_UP_PATH = "/signup";
+
+export function isAuthPath(pathname: string) {
+  return pathname === SIGN_IN_PATH || pathname === SIGN_UP_PATH;
+}
+
 const USER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

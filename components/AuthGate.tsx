@@ -16,7 +16,9 @@ import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
 import { HomeThemeProvider } from "@/components/HomeTheme";
 import {
+  isAuthPath,
   readAuthSessionHint,
+  SIGN_IN_PATH,
   setAuthSessionHint,
 } from "@/lib/auth-session-hint";
 import { getSupabaseClient, type SupabaseClient } from "@/lib/supabase";
@@ -41,14 +43,13 @@ export function useAuth() {
 
 const subscribeToNothing = () => () => {};
 
-const AUTH_PATH = "/login";
 
-// Where to go after signing in: the page that sent the visitor to /login, if
+// Where to go after signing in: the page that sent the visitor to /signin, if
 // it's a page of this app, otherwise home.
 function readNextPath() {
   try {
     const next = new URLSearchParams(window.location.search).get("next") ?? "";
-    return next.startsWith("/") && !next.startsWith("//") && !next.startsWith(AUTH_PATH)
+    return next.startsWith("/") && !next.startsWith("//") && !isAuthPath(next.split("?")[0])
       ? next
       : "/";
   } catch {
@@ -72,7 +73,7 @@ function Spinner() {
 export default function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isAuthPage = pathname === AUTH_PATH;
+  const isAuthPage = isAuthPath(pathname);
   // The layout is static, so the session hint cookie is read in the browser.
   const isHydrated = useSyncExternalStore(
     subscribeToNothing,
@@ -146,15 +147,18 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setAuthSessionHint(null);
   };
 
-  // Signed out: every app page goes to /login (proxy.ts already does this
-  // on the server when there's no session cookie). Signed in: /login goes on.
+  // Signed out: every app page goes to /signin (proxy.ts already does this
+  // on the server when there's no session cookie). Signed in: /signin and
+  // /signup go on.
   useEffect(() => {
     if (loading || authError) {
       return;
     }
     if (!user && !isAuthPage) {
       const next = `${window.location.pathname}${window.location.search}`;
-      router.replace(next === "/" ? AUTH_PATH : `${AUTH_PATH}?next=${encodeURIComponent(next)}`);
+      router.replace(
+        next === "/" ? SIGN_IN_PATH : `${SIGN_IN_PATH}?next=${encodeURIComponent(next)}`,
+      );
     } else if (user && isAuthPage) {
       router.replace(readNextPath());
     }

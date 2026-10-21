@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
 import { Button, Menu } from "@/components/ui";
-import { setAuthSessionHint } from "@/lib/auth-session-hint";
+import { SIGN_IN_PATH, SIGN_UP_PATH, setAuthSessionHint } from "@/lib/auth-session-hint";
 import { getSupabaseClient } from "@/lib/supabase";
 
 // Shown in the footer's language menu. Picking one is remembered for the
@@ -80,11 +80,25 @@ function Field({
   );
 }
 
-// The sign-in / sign-up page at /login, laid out like Google's account
+// The sign-in / sign-up page at /signin and /signup, laid out like Google's account
 // sign-in: a two-column card with the heading on the left and the form on
 // the right. AuthGate sends signed-out visitors here and on once signed in.
-export default function AuthPage() {
-  const [isSignUp, setIsSignUp] = useState(false);
+export default function AuthPage({ mode }: { mode: "signin" | "signup" }) {
+  const [isSignUp, setIsSignUpState] = useState(mode === "signup");
+  // Each mode has its own address, like Google's: /signin and /signup. The
+  // switch only rewrites the URL, so whatever was typed stays.
+  const setIsSignUp = (signUp: boolean) => {
+    setIsSignUpState(signUp);
+    try {
+      window.history.replaceState(
+        null,
+        "",
+        `${signUp ? SIGN_UP_PATH : SIGN_IN_PATH}${window.location.search}`,
+      );
+    } catch {
+      // The form still switches; only the address bar stays behind.
+    }
+  };
   const [verifyEmail, setVerifyEmail] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,7 +109,7 @@ export default function AuthPage() {
   const [language, setLanguage] = useState(LANGUAGES[0]);
 
   const switchMode = () => {
-    setIsSignUp((value) => !value);
+    setIsSignUp(!isSignUp);
     setPassword("");
     setEmailError("");
     setError("");
@@ -185,7 +199,7 @@ export default function AuthPage() {
             ) : (
               <div className="space-y-6">
                 <Field
-                  id="login-email"
+                  id="auth-email"
                   label="Email"
                   type="email"
                   value={email}
@@ -196,7 +210,7 @@ export default function AuthPage() {
                 />
                 <div>
                   <Field
-                    id="login-password"
+                    id="auth-password"
                     label="Password"
                     type={showPassword ? "text" : "password"}
                     value={password}

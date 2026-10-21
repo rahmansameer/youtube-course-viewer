@@ -1,5 +1,5 @@
 import AuthPage from "@/components/AuthPage";
 
 export default function Page() {
-  return <AuthPage />;
+  return <AuthPage mode="signup" />;
 }

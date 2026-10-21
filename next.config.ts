@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    // The sign-in page used to live at /login; keep old links working
+    // (the query string, e.g. ?next=, carries over).
+    return [{ source: "/login", destination: "/signin", permanent: true }];
+  },
   async headers() {
     return [
       {
