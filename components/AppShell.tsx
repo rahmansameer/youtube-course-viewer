@@ -27,7 +27,7 @@ type AppShellProps = {
 export function Logo() {
   return (
     <Link href="/" aria-label="Course Viewer home" className="flex items-center gap-1.5 px-2 py-4">
-      <img src="/favicon.ico" alt="" width={24} height={24} className="h-6 w-6" />
+      <Image src="/logo.png" alt="" width={24} height={24} className="h-6 w-6 object-contain" />
       <span className="text-[19px] font-bold tracking-[-0.04em] text-fg">Course Viewer</span>
     </Link>
   );
