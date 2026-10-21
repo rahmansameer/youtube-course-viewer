@@ -12,6 +12,7 @@ import {
 
 import { useAuth } from "@/components/AuthGate";
 import CourseNotes from "@/components/CourseNotes";
+import CourseSuggestions from "@/components/CourseSuggestions";
 import LessonList from "@/components/LessonList";
 import PageTitle from "@/components/PageTitle";
 import { Button, IconButton, Menu } from "@/components/ui";
@@ -638,6 +639,9 @@ export default function CoursePage() {
                 onSelect={goToLesson}
                 onToggleCompleted={toggleLessonCompleted}
               />
+            ) : null}
+            {course && !isWidePlayer ? (
+              <CourseSuggestions excludeKind="playlist" excludeId={course.id} />
             ) : null}
             {error ? (
               <p role="alert" className="text-sm text-danger">

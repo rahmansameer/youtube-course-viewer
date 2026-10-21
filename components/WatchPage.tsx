@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import CourseNotes from "@/components/CourseNotes";
+import CourseSuggestions from "@/components/CourseSuggestions";
 import PageTitle from "@/components/PageTitle";
 import { Button, ButtonLink, IconButton, Menu } from "@/components/ui";
 import { useVideoProgress } from "@/components/useVideoProgress";
@@ -70,9 +71,20 @@ export default function WatchPage() {
   const videoId = typeof params?.id === "string" ? params.id : "";
   const { video, loading, error, saveProgress, setCompleted, updateNotes } =
     useVideoProgress(videoId);
-  const { isWidePlayer, toggleWidePlayer } = useWidePlayer();
   // A single video opens with its notes beside it.
   const [notesOpen, setNotesOpen] = useState(true);
+  // With notes closed nothing sits beside the player, so it widens into
+  // theater mode on its own (without changing the saved theater choice).
+  const toggleTheater = () => {
+    if (isWidePlayer || !notesOpen) {
+      if (isWidePlayer) toggleWidePlayer();
+      setNotesOpen(true);
+    } else {
+      toggleWidePlayer();
+    }
+  };
+  const { isWidePlayer, toggleWidePlayer } = useWidePlayer(() => toggleTheater());
+  const theater = isWidePlayer || !notesOpen;
   const [channel, setChannel] = useState<ChannelInfo | null>(null);
   const [youtubeDescription, setYoutubeDescription] = useState<VideoAbout | null>(null);
   const playerHandleRef = useRef<PlayerHandle | null>(null);
@@ -147,13 +159,13 @@ export default function WatchPage() {
     <>
       <PageTitle name={video?.title ?? "Watch"} />
       <WatchLayout
-        theater={isWidePlayer}
+        theater={theater}
         player={
           video ? (
             <YouTubePlayer
               videoId={video.id}
               currentTime={getStartTime(video)}
-              expanded={isWidePlayer}
+              expanded={theater}
               onTimeUpdate={saveProgress}
               handleRef={playerHandleRef}
             />
@@ -184,9 +196,9 @@ export default function WatchPage() {
                   <Menu
                     items={[
                       {
-                        label: isWidePlayer ? "Default view (t)" : "Theater mode (t)",
+                        label: theater ? "Default view (t)" : "Theater mode (t)",
                         icon: "theater",
-                        onSelect: toggleWidePlayer,
+                        onSelect: toggleTheater,
                       },
                       { label: "Open on YouTube", icon: "openInNew", href: youtubeUrl, external: true },
                     ]}
@@ -210,7 +222,11 @@ export default function WatchPage() {
                 onChange={updateNotes}
                 onSeek={(seconds) => playerHandleRef.current?.seekTo(seconds)}
                 onClose={toggleNotes}
+                fillHeight={!theater}
               />
+            ) : null}
+            {video && !theater ? (
+              <CourseSuggestions excludeKind="video" excludeId={video.id} />
             ) : null}
             {error ? (
               <p role="alert" className="text-sm text-danger">

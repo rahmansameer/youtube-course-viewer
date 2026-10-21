@@ -232,13 +232,14 @@ function GuideContent() {
             <Link
               key={`${item.kind}:${item.id}`}
               href={item.href}
-              className="flex h-10 items-center gap-6 rounded-[10px] px-3 text-sm transition-colors hover:bg-chip"
+              className="flex h-10 items-center gap-3 rounded-[10px] px-3 text-sm transition-colors hover:bg-chip"
             >
               {item.thumbnail ? (
+                // The thumbnail's own 16:9 shape, as a small video still.
                 <img
                   src={item.thumbnail}
                   alt=""
-                  className="h-6 w-6 shrink-0 rounded-full object-cover"
+                  className="aspect-video h-6 w-auto shrink-0 rounded object-cover"
                 />
               ) : (
                 <Icon name="playlist" />

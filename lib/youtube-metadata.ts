@@ -32,6 +32,38 @@ async function fetchOEmbed(url: string): Promise<OEmbedResponse | null> {
   }
 }
 
+// Titles for YouTube links in descriptions (shown in link chips), looked up
+// once per link and a few at a time so a long description doesn't flood
+// YouTube with requests.
+const linkTitles = new Map<string, Promise<string | null>>();
+const titleQueue: (() => void)[] = [];
+let titleRequests = 0;
+
+function runQueuedTitle() {
+  if (titleRequests >= 4) return;
+  const next = titleQueue.shift();
+  if (next) next();
+}
+
+export function fetchLinkTitle(url: string): Promise<string | null> {
+  const known = linkTitles.get(url);
+  if (known) return known;
+  const request = new Promise<string | null>((resolve) => {
+    titleQueue.push(() => {
+      titleRequests += 1;
+      void fetchOEmbed(url)
+        .then((data) => resolve(typeof data?.title === "string" ? data.title : null))
+        .finally(() => {
+          titleRequests -= 1;
+          runQueuedTitle();
+        });
+    });
+    runQueuedTitle();
+  });
+  linkTitles.set(url, request);
+  return request;
+}
+
 export async function fetchVideoInfo(videoId: string): Promise<VideoInfo | null> {
   const data = await fetchOEmbed(`https://www.youtube.com/watch?v=${videoId}`);
   if (!data || typeof data.title !== "string") {

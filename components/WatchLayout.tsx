@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import AppShell from "@/components/AppShell";
+import RichDescription, { HASHTAG, hashtagUrl } from "@/components/RichDescription";
 import { LetterAvatar } from "@/components/ui";
 import { type VideoAbout } from "@/lib/youtube-metadata";
 
@@ -25,11 +26,36 @@ export default function WatchLayout({
   details,
   secondary,
 }: WatchLayoutProps) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<HTMLDivElement | null>(null);
+  const detailsRef = useRef<HTMLDivElement | null>(null);
+
+  // --primary-height: from the top of the video to the bottom of the title
+  // and channel row, so a side panel can match the left column exactly.
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    const playerSlot = playerRef.current;
+    const detailsSlot = detailsRef.current;
+    if (!grid || !playerSlot || !detailsSlot) return;
+    const measure = () => {
+      const frame = playerSlot.firstElementChild ?? playerSlot;
+      const header = detailsSlot.querySelector("[data-video-header]");
+      const bottom = (header ?? frame).getBoundingClientRect().bottom;
+      const height = Math.round(bottom - frame.getBoundingClientRect().top);
+      grid.style.setProperty("--primary-height", `${Math.max(320, height)}px`);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(playerSlot);
+    observer.observe(detailsSlot);
+    return () => observer.disconnect();
+  }, [theater]);
+
   return (
     <AppShell guide="drawer">
-      <div className="watch-grid" data-theater={theater ? "" : undefined}>
-        <div className="watch-player">{player}</div>
-        <div className="watch-details min-w-0">{details}</div>
+      <div ref={gridRef} className="watch-grid" data-theater={theater ? "" : undefined}>
+        <div ref={playerRef} className="watch-player">{player}</div>
+        <div ref={detailsRef} className="watch-details min-w-0">{details}</div>
         <div className="watch-secondary flex min-w-0 flex-col gap-4">{secondary}</div>
       </div>
     </AppShell>
@@ -47,60 +73,6 @@ type VideoDetailsProps = {
   fallbackDescription: string;
   onSeek: (seconds: number) => void;
 };
-
-// Links, hashtags and timestamps, in that order of precedence.
-const LINK_OR_TIME =
-  /(https?:\/\/[^\s]+|#[\p{L}\p{M}\p{N}_]+|\b(?:\d{1,2}:)?\d{1,2}:\d{2}\b)/gu;
-const HASHTAG = /#[\p{L}\p{M}\p{N}_]+/gu;
-
-function toSeconds(clock: string) {
-  return clock.split(":").reduce((total, part) => total * 60 + Number(part), 0);
-}
-
-function hashtagUrl(tag: string) {
-  return `https://www.youtube.com/hashtag/${encodeURIComponent(tag.slice(1).toLowerCase())}`;
-}
-
-// Like YouTube: links and hashtags open in a new tab, timestamps seek the
-// video.
-function LinkifiedText({ text, onSeek }: { text: string; onSeek: (seconds: number) => void }) {
-  return (
-    <>
-      {text.split(LINK_OR_TIME).map((part, index) => {
-        if (index % 2 === 0) {
-          return part;
-        }
-        if (part.startsWith("http") || part.startsWith("#")) {
-          return (
-            <a
-              key={index}
-              href={part.startsWith("#") ? hashtagUrl(part) : part}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(event) => event.stopPropagation()}
-              className="text-link hover:underline"
-            >
-              {part}
-            </a>
-          );
-        }
-        return (
-          <button
-            key={index}
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSeek(toSeconds(part));
-            }}
-            className="text-link hover:underline"
-          >
-            {part}
-          </button>
-        );
-      })}
-    </>
-  );
-}
 
 const compactViews = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 const fullViews = new Intl.NumberFormat("en");
@@ -125,8 +97,14 @@ function timeAgo(date: Date) {
   return "just now";
 }
 
+const LINE_PX = 20;
+// The box's bottom padding (p-3), so its edge lines up, not its text.
+const BOX_PADDING_PX = 12;
+
 // youtube.com's description box: views, date and hashtags in bold on top,
-// three lines with "...more" until it's opened.
+// then the text cut off with "...more" until it's opened. Beside a side
+// column (lessons, notes, suggestions) the cut-off text reaches down to the
+// bottom of that column; stacked on small screens it shows ten lines.
 function DescriptionBox({
   about,
   text,
@@ -137,9 +115,47 @@ function DescriptionBox({
   onSeek: (seconds: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [clampPx, setClampPx] = useState(10 * LINE_PX);
+  // The exact room down to the column's bottom; the text is cut on whole
+  // lines and the box fills the rest, so its edge lines up exactly.
+  const [fillPx, setFillPx] = useState(0);
+  const [isLong, setIsLong] = useState(false);
+  const textRef = useRef<HTMLParagraphElement | null>(null);
   const published = about?.publishDate ? new Date(about.publishDate) : null;
   const hashtags = [...new Set(text.match(HASHTAG) ?? [])].slice(0, 3);
-  const isLong = text.split("\n").length > 3 || text.length > 240;
+
+  useLayoutEffect(() => {
+    const textEl = textRef.current;
+    if (!textEl || expanded) return;
+    const grid = textEl.closest(".watch-grid");
+    const side = grid?.querySelector(".watch-secondary");
+    const measure = () => {
+      let height = 10 * LINE_PX;
+      let fill = 0;
+      if (side) {
+        const sideBox = side.getBoundingClientRect();
+        const textBox = textEl.getBoundingClientRect();
+        const room = sideBox.bottom - textBox.top - BOX_PADDING_PX;
+        // Only when the column is beside the description (not below it on
+        // small screens) and reaches past its first few lines.
+        if (sideBox.left >= textBox.right - 1 && room >= 3 * LINE_PX) {
+          height = Math.floor(room / LINE_PX) * LINE_PX;
+          fill = Math.floor(room);
+        }
+      }
+      const long = textEl.scrollHeight > height + 1;
+      setClampPx(height);
+      setIsLong(long);
+      setFillPx(long ? fill : 0);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(textEl);
+    // The grid resizes when theater mode moves the column under the video.
+    if (grid) observer.observe(grid);
+    if (side) observer.observe(side);
+    return () => observer.disconnect();
+  }, [expanded, text]);
 
   return (
     <div
@@ -187,19 +203,21 @@ function DescriptionBox({
         </p>
       ) : null}
       {text ? (
-        <div className="relative">
-          <p
-            className={`whitespace-pre-wrap [overflow-wrap:anywhere] ${
-              expanded ? "" : "line-clamp-3"
-            }`}
-          >
-            <LinkifiedText text={text} onSeek={onSeek} />
-          </p>
-          {!expanded && isLong ? (
-            <span className="absolute right-0 bottom-0 bg-surface pl-1 font-medium before:absolute before:top-0 before:right-full before:h-full before:w-8 before:bg-gradient-to-r before:from-transparent before:to-surface group-hover:bg-surface-hover group-hover:before:to-surface-hover">
-              ...more
-            </span>
-          ) : null}
+        <div style={expanded || !fillPx ? undefined : { minHeight: fillPx }}>
+          <div className="relative">
+            <p
+              ref={textRef}
+              className="overflow-hidden whitespace-pre-wrap [overflow-wrap:anywhere]"
+              style={expanded ? undefined : { maxHeight: clampPx }}
+            >
+              <RichDescription text={text} onSeek={onSeek} />
+            </p>
+            {!expanded && isLong ? (
+              <span className="absolute right-0 bottom-0 bg-surface pl-1 font-medium before:absolute before:top-0 before:right-full before:h-full before:w-8 before:bg-gradient-to-r before:from-transparent before:to-surface group-hover:bg-surface-hover group-hover:before:to-surface-hover">
+                ...more
+              </span>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {expanded ? (
@@ -231,29 +249,31 @@ export function VideoDetails({
   const text = about?.description.trim() || fallbackDescription.trim();
   return (
     <>
-      <h1 className="mt-3 line-clamp-2 text-xl leading-7 font-bold break-words">{title}</h1>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {owner?.avatar ? (
-            <img
-              src={owner.avatar}
-              alt=""
-              width={40}
-              height={40}
-              className="h-10 w-10 shrink-0 rounded-full bg-chip object-cover"
-            />
-          ) : owner ? (
-            <LetterAvatar name={owner.name} size={40} />
-          ) : (
-            <span aria-hidden className="h-10 w-10 shrink-0 rounded-full bg-chip" />
-          )}
-          {owner ? (
-            <p className="min-w-0 truncate text-base font-medium">{owner.name}</p>
-          ) : (
-            <span aria-hidden className="h-4 w-32 rounded bg-chip" />
-          )}
+      <div data-video-header>
+        <h1 className="mt-3 line-clamp-2 text-xl leading-7 font-bold break-words">{title}</h1>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {owner?.avatar ? (
+              <img
+                src={owner.avatar}
+                alt=""
+                width={40}
+                height={40}
+                className="h-10 w-10 shrink-0 rounded-full bg-chip object-cover"
+              />
+            ) : owner ? (
+              <LetterAvatar name={owner.name} size={40} />
+            ) : (
+              <span aria-hidden className="h-10 w-10 shrink-0 rounded-full bg-chip" />
+            )}
+            {owner ? (
+              <p className="min-w-0 truncate text-base font-medium">{owner.name}</p>
+            ) : (
+              <span aria-hidden className="h-4 w-32 rounded bg-chip" />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
       </div>
       {about || text ? (
         <DescriptionBox key={title} about={about} text={text} onSeek={onSeek} />

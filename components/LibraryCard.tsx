@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
 import Icon from "@/components/Icon";
+import { useThumbnailTint } from "@/components/useThumbnailTint";
 import { DurationBadge, IconButton, Menu, ResumeBar, type MenuItem } from "@/components/ui";
 import { type LibraryItem } from "@/lib/library";
 import { formatDuration } from "@/lib/youtube";
@@ -102,21 +103,34 @@ export function libraryMenuItems(
   ];
 }
 
-export default function LibraryCard({
-  item,
-  eagerThumbnail = false,
-  onAction,
-}: LibraryCardProps) {
-  // Playlists know their channel; a single video's channel is looked up in
-  // the background and fills in when it arrives.
+// Playlists know their channel; a single video's channel is looked up in
+// the background and fills in when it arrives.
+export function useItemChannel(item: LibraryItem) {
   const cachedChannel = useSyncExternalStore(
     subscribeToChannels,
     () => (item.kind === "video" ? getCachedChannelName(item.id) : ""),
     () => "",
   );
-  const channel = item.channel || cachedChannel;
+  return item.channel || cachedChannel;
+}
+
+export default function LibraryCard({
+  item,
+  eagerThumbnail = false,
+  onAction,
+}: LibraryCardProps) {
+  const channel = useItemChannel(item);
+  const tint = useThumbnailTint(item.thumbnail);
   return (
-    <article className="group relative flex min-w-0 flex-col">
+    // self-start: only as tall as this card, not the tallest in its row.
+    <article className="group relative isolate flex min-w-0 flex-col self-start">
+      {/* YouTube's hover: a card tinted with the thumbnail's color grows in
+          behind the video. */}
+      <span
+        aria-hidden
+        style={tint}
+        className="card-tint pointer-events-none absolute -inset-x-2 -top-2 -bottom-3 -z-10 scale-95 rounded-2xl opacity-0 transition duration-200 ease-out group-hover:scale-100 group-hover:opacity-100 motion-reduce:transition-none"
+      />
       <Link
         href={item.href}
         aria-label={item.title}

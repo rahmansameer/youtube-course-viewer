@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const THEATER_STORAGE_KEY = "youtube-course-viewer-theater";
 
@@ -15,8 +15,12 @@ export function isTypingTarget(target: EventTarget | null) {
 
 // Theater mode: the player spans the full width. T toggles it, and the
 // choice is remembered like on YouTube.
-export function useWidePlayer() {
+// `onToggleKey` lets a page decide what T does (the single-video page also
+// opens its notes when leaving theater mode).
+export function useWidePlayer(onToggleKey?: () => void) {
   const [isWidePlayer, setIsWidePlayer] = useState(false);
+  const onToggleKeyRef = useRef(onToggleKey);
+  onToggleKeyRef.current = onToggleKey;
 
   // Read before paint; the page is server-rendered without it.
   useLayoutEffect(() => {
@@ -52,7 +56,7 @@ export function useWidePlayer() {
       }
 
       event.preventDefault();
-      toggleWidePlayer();
+      (onToggleKeyRef.current ?? toggleWidePlayer)();
     };
 
     window.addEventListener("keydown", handleKeyDown);

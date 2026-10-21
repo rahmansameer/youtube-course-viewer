@@ -20,6 +20,9 @@ type CourseNotesProps = {
   // Timestamp links in the notes jump the player here.
   onSeek: (seconds: number) => void;
   onClose?: () => void;
+  // Beside the player, match the height of the video, title and channel
+  // row (--primary-height, set by WatchLayout).
+  fillHeight?: boolean;
 };
 
 // Timestamps are saved as ordinary YouTube links ("watch?v=ID&t=83s"), so
@@ -296,6 +299,7 @@ export default function CourseNotes({
   onChange,
   onSeek,
   onClose,
+  fillHeight = false,
 }: CourseNotesProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const lastEmittedNotesRef = useRef<string | null>(null);
@@ -380,7 +384,9 @@ export default function CourseNotes({
   return (
     <section
       aria-label="Notes"
-      className="flex h-[min(520px,calc(100dvh-140px))] min-h-80 flex-col overflow-hidden rounded-xl border border-line"
+      className={`flex h-[min(520px,calc(100dvh-140px))] min-h-80 flex-col overflow-hidden rounded-xl border border-line ${
+        fillHeight ? "min-[1016px]:h-(--primary-height) min-[1016px]:min-h-0" : ""
+      }`}
     >
       <header className="flex items-center justify-between gap-3 border-b border-line py-2 pr-2 pl-4">
         <h2 className="text-xl font-bold">Notes</h2>
