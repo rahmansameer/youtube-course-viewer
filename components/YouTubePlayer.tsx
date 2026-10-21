@@ -225,12 +225,12 @@ export default function YouTubePlayer({
       const target = player();
       if (!target) return;
       const playing = target.getPlayerState?.() === window.YT?.PlayerState?.PLAYING;
+      // No badge here: the video stopping or moving is feedback enough, and
+      // a note on every play/pause would distract.
       if (playing) {
         target.pauseVideo?.();
-        showBadge("Paused");
       } else {
         target.playVideo?.();
-        showBadge("Playing");
       }
     };
 

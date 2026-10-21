@@ -104,7 +104,7 @@ const LINE_PX = 22;
 const BOX_PADDING_PX = 12;
 
 // youtube.com's description box: views, date and hashtags in bold on top,
-// then the text cut off with "...more" until it's opened. Beside a side
+// then the text cut off with "...See more" until it's opened. Beside a side
 // column (lessons, notes, suggestions) the cut-off text reaches down to the
 // bottom of that column; stacked on small screens it shows ten lines.
 function DescriptionBox({
@@ -160,16 +160,8 @@ function DescriptionBox({
   }, [expanded, text]);
 
   return (
-    <div
-      className={`group mt-3 rounded-xl bg-surface p-3 text-sm leading-[22px] ${
-        expanded ? "" : "cursor-pointer hover:bg-surface-hover"
-      }`}
-      onClick={() => {
-        if (!expanded) {
-          setExpanded(true);
-        }
-      }}
-    >
+    // Opens only from "see more", not from a click anywhere on the box.
+    <div className="mt-3 rounded-xl bg-surface p-3 text-sm leading-[22px]">
       {about?.viewCount != null || published ? (
         <p className="flex flex-wrap gap-x-2 font-medium">
           {about?.viewCount != null ? (
@@ -215,9 +207,13 @@ function DescriptionBox({
               <RichDescription text={text} onSeek={onSeek} />
             </p>
             {!expanded && isLong ? (
-              <span className="absolute right-0 bottom-0 bg-surface pl-1 font-medium before:absolute before:top-0 before:right-full before:h-full before:w-8 before:bg-gradient-to-r before:from-transparent before:to-surface group-hover:bg-surface-hover group-hover:before:to-surface-hover">
-                ...more
-              </span>
+              <button
+                type="button"
+                onClick={() => setExpanded(true)}
+                className="absolute right-0 bottom-0 bg-surface pl-1 font-medium hover:underline before:absolute before:top-0 before:right-full before:h-full before:w-8 before:bg-gradient-to-r before:from-transparent before:to-surface"
+              >
+                ...See more
+              </button>
             ) : null}
           </div>
         </div>
@@ -226,15 +222,14 @@ function DescriptionBox({
         <button
           type="button"
           className="mt-4 font-medium"
-          onClick={(event) => {
-            event.stopPropagation();
-            setExpanded(false);
-          }}
+          onClick={() => setExpanded(false)}
         >
           Show less
         </button>
       ) : !isLong ? (
-        <span className="font-medium">...more</span>
+        <button type="button" onClick={() => setExpanded(true)} className="font-medium hover:underline">
+          ...See more
+        </button>
       ) : null}
     </div>
   );
