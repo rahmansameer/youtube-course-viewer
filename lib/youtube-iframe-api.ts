@@ -89,6 +89,81 @@ export function preloadYouTubeIframeApi() {
   }
 }
 
+// Reads a video's length without showing it, using an off-screen muted
+// player. Resolves null if YouTube does not report a duration in time, so
+// callers can save the course anyway and let the watch page fill it in later.
+export async function fetchVideoDuration(
+  videoId: string,
+  timeoutMs = 8000,
+): Promise<number | null> {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    await loadYouTubeIframeApi();
+  } catch {
+    return null;
+  }
+  if (!window.YT?.Player) {
+    return null;
+  }
+
+  const container = document.createElement("div");
+  container.setAttribute("aria-hidden", "true");
+  container.style.cssText =
+    "position:fixed;left:-10000px;top:0;width:200px;height:200px;pointer-events:none;opacity:0;";
+  const mount = document.createElement("div");
+  container.appendChild(mount);
+  document.body.appendChild(container);
+
+  return new Promise<number | null>((resolve) => {
+    let player: YouTubePlayerInstance | null = null;
+    let pollId = 0;
+    let settled = false;
+
+    const finish = (duration: number | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearInterval(pollId);
+      window.clearTimeout(timeoutId);
+      try {
+        player?.destroy?.();
+      } catch {
+        // The player may already be gone; the container is removed anyway.
+      }
+      container.remove();
+      resolve(duration);
+    };
+
+    const timeoutId = window.setTimeout(() => finish(null), timeoutMs);
+
+    player = new window.YT!.Player(mount, {
+      videoId,
+      width: 200,
+      height: 200,
+      playerVars: { autoplay: 0, controls: 0, mute: 1, playsinline: 1 },
+      events: {
+        onReady: (event) => {
+          const read = () => {
+            const duration = event.target.getDuration?.() ?? 0;
+            if (Number.isFinite(duration) && duration > 0) {
+              finish(duration);
+            }
+          };
+          read();
+          if (!settled) {
+            pollId = window.setInterval(read, 250);
+          }
+        },
+        onError: () => finish(null),
+      },
+    });
+  });
+}
+
 declare global {
   interface Window {
     YT?: {

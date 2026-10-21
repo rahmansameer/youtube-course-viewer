@@ -13,8 +13,10 @@ import {
   getCachedVideos,
   loadVideos,
   saveVideo,
+  updateVideo,
   type VideoRecord,
 } from "@/lib/storage";
+import { fetchVideoDuration } from "@/lib/youtube-iframe-api";
 import { extractVideoId, getVideoThumbnail } from "@/lib/youtube";
 
 function haveSameVideos(left: VideoRecord[], right: VideoRecord[]) {
@@ -133,6 +135,52 @@ function HomePageContent() {
     };
   }, [libraryUserId]);
 
+  // Courses added before durations were looked up on save still show
+  // "--:--"; fill them in one at a time once the library has loaded.
+  const durationLookupsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!userId || loading) {
+      return;
+    }
+    const missing = videos.filter(
+      (video) => !video.duration && !durationLookupsRef.current.has(video.id),
+    );
+    if (missing.length === 0) {
+      return;
+    }
+    for (const video of missing) {
+      durationLookupsRef.current.add(video.id);
+    }
+
+    void (async () => {
+      for (const video of missing) {
+        const duration = await fetchVideoDuration(video.id);
+        if (!duration) {
+          continue;
+        }
+        try {
+          await updateVideo(userId, video.id, { duration });
+        } catch {
+          // Leave it for the watch page to record; the card keeps "--:--".
+          continue;
+        }
+        setVideos((currentVideos) => {
+          const updatedVideos = currentVideos.map((item) =>
+            item.id === video.id && !item.duration
+              ? { ...item, duration }
+              : item,
+          );
+          try {
+            cacheVideos(userId, updatedVideos);
+          } catch {
+            // The next library load re-caches the saved duration.
+          }
+          return updatedVideos;
+        });
+      }
+    })();
+  }, [loading, userId, videos]);
+
   const handleSave = async ({
     youtubeUrl,
     title,
@@ -157,6 +205,7 @@ function HomePageContent() {
           title: title || existing.title,
           description,
           thumbnail: existing.thumbnail || getVideoThumbnail(videoId),
+          duration: existing.duration ?? (await fetchVideoDuration(videoId)),
           updatedAt: now,
         }
       : {
@@ -165,7 +214,7 @@ function HomePageContent() {
           title: title || "Untitled course",
           description,
           thumbnail: getVideoThumbnail(videoId),
-          duration: null,
+          duration: await fetchVideoDuration(videoId),
           currentTime: 0,
           createdAt: now,
           updatedAt: now,
