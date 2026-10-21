@@ -1,43 +1,95 @@
 "use client";
 
 import {
-  faCompress,
-  faDownLeftAndUpRightToCenter,
-  faExpand,
-  faUpRightAndDownLeftFromCenter,
-  faPause,
-  faPlay,
-  faVolumeHigh,
-  faVolumeXmark,
-} from "@fortawesome/free-solid-svg-icons";
-import {
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
+  type RefObject,
 } from "react";
 
-import Icon from "@/components/Icon";
+import Icon, { type IconName } from "@/components/Icon";
 import { formatTime } from "@/lib/youtube";
 import {
   loadYouTubeIframeApi,
   type YouTubePlayerInstance,
 } from "@/lib/youtube-iframe-api";
 
+export type PlayerHandle = {
+  seekTo: (seconds: number) => void;
+};
+
 type YouTubePlayerProps = {
   videoId: string;
+  // Lets the page seek the video, e.g. from a timestamp in the notes.
+  handleRef?: RefObject<PlayerHandle | null>;
   currentTime: number;
   // Shown in the timeline until the player reports the real duration.
   savedDuration?: number | null;
+  // Theater mode: the player fills the width under the masthead.
   expanded?: boolean;
   onToggleExpanded?: () => void;
+  // Called when playback reaches the end, e.g. to open the next lesson.
+  onEnded?: () => void;
+  // Course lessons get YouTube's playlist controls.
+  onNext?: () => void;
+  onPrevious?: () => void;
+  autoplay?: { enabled: boolean; onChange: (enabled: boolean) => void };
   onTimeUpdate: (
     currentTime: number,
     duration: number,
     forcePersist?: boolean,
   ) => void;
 };
+
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const PLAYBACK_RATE_STORAGE_KEY = "youtube-course-viewer-playback-rate";
+
+function getStoredPlaybackRate() {
+  try {
+    const stored = Number(window.localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY));
+    return PLAYBACK_RATES.includes(stored) ? stored : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function storePlaybackRate(rate: number) {
+  try {
+    window.localStorage.setItem(PLAYBACK_RATE_STORAGE_KEY, String(rate));
+  } catch {
+    // The speed still applies to this video; it just won't be remembered.
+  }
+}
+
+function PlayerButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  size = 28,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  size?: number;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-12 w-12 shrink-0 items-center justify-center text-white opacity-90 transition-opacity hover:opacity-100 disabled:opacity-40"
+    >
+      <Icon name={icon} size={size} />
+    </button>
+  );
+}
 
 type VideoTimelineProps = {
   currentTime: number;
@@ -46,6 +98,9 @@ type VideoTimelineProps = {
   isPlaying: boolean;
   getCurrentTime: () => number;
   seekTo: (seconds: number, forcePersist?: boolean) => void;
+  // Controls on either side of the "0:13 / 13:46" clock.
+  left: ReactNode;
+  right: ReactNode;
 };
 
 function VideoTimeline({
@@ -55,6 +110,8 @@ function VideoTimeline({
   isPlaying,
   getCurrentTime,
   seekTo,
+  left,
+  right,
 }: VideoTimelineProps) {
   const [displayTime, setDisplayTime] = useState(currentTime);
   const scrubbingRef = useRef(false);
@@ -110,16 +167,13 @@ function VideoTimeline({
 
   return (
     <>
-      <span className="shrink-0 text-sm font-medium tabular-nums text-zinc-700">
-        {formatTime(displayTime)}
-      </span>
-      <div className="relative flex h-5 min-w-0 flex-1 items-center">
+      <div className="youtube-timeline group/timeline relative flex h-4 items-center">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-zinc-200"
+          className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden bg-white/20 transition-[height] group-hover/timeline:h-[5px]"
         >
           <div
-            className="h-full origin-left rounded-full bg-zinc-900"
+            className="h-full origin-left bg-brand"
             style={{
               transform: `scaleX(${Math.min(1, Math.max(0, progress))})`,
             }}
@@ -142,12 +196,17 @@ function VideoTimeline({
           onChange={handleSeekChange}
           onKeyUp={commitSeek}
           onBlur={commitSeek}
-          className="youtube-seekbar relative z-10 h-5 w-full cursor-pointer disabled:cursor-not-allowed"
+          className="youtube-seekbar relative z-10 h-4 w-full cursor-pointer disabled:cursor-default"
         />
       </div>
-      <span className="shrink-0 text-sm font-medium tabular-nums text-zinc-500">
-        {formatTime(safeDuration)}
-      </span>
+      <div className="flex h-12 items-center">
+        {left}
+        <span className="px-2 text-[13px] whitespace-nowrap text-[#eee] tabular-nums">
+          {formatTime(displayTime)} / {formatTime(safeDuration)}
+        </span>
+        <div className="flex-1" />
+        {right}
+      </div>
     </>
   );
 }
@@ -158,6 +217,11 @@ export default function YouTubePlayer({
   savedDuration = null,
   expanded = false,
   onToggleExpanded,
+  onEnded,
+  onNext,
+  onPrevious,
+  autoplay,
+  handleRef,
   onTimeUpdate,
 }: YouTubePlayerProps) {
   const playerShellRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +231,10 @@ export default function YouTubePlayer({
   const saveIntervalRef = useRef<number | null>(null);
   const lastReportedSecondRef = useRef(-1);
   const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onEndedRef = useRef(onEnded);
+  // The speed carries over between videos and visits, like on YouTube.
+  const [playbackRate, setPlaybackRateState] = useState(getStoredPlaybackRate);
+  const playbackRateRef = useRef(playbackRate);
   const currentTimeRef = useRef(currentTime);
   const durationRef = useRef(0);
   const [playerError, setPlayerError] = useState("");
@@ -178,6 +246,25 @@ export default function YouTubePlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Controls hide while playing once the pointer has been still for a bit.
+  const [pointerActive, setPointerActive] = useState(false);
+  const pointerTimeoutRef = useRef<number | null>(null);
+  const revealControls = useCallback(() => {
+    setPointerActive(true);
+    if (pointerTimeoutRef.current !== null) {
+      window.clearTimeout(pointerTimeoutRef.current);
+    }
+    pointerTimeoutRef.current = window.setTimeout(() => setPointerActive(false), 2500);
+  }, []);
+  useEffect(
+    () => () => {
+      if (pointerTimeoutRef.current !== null) {
+        window.clearTimeout(pointerTimeoutRef.current);
+      }
+    },
+    [],
+  );
   const [fullscreenError, setFullscreenError] = useState("");
   currentTimeRef.current = currentTime;
 
@@ -237,6 +324,21 @@ export default function YouTubePlayer({
     },
     [seekTo],
   );
+
+  useEffect(() => {
+    if (!handleRef) {
+      return;
+    }
+    handleRef.current = {
+      seekTo: (seconds) => {
+        seekTo(seconds, true);
+        playerRef.current?.playVideo?.();
+      },
+    };
+    return () => {
+      handleRef.current = null;
+    };
+  }, [handleRef, seekTo]);
 
   const getCurrentTime = useCallback(
     () => playerRef.current?.getCurrentTime?.() ?? currentTimeRef.current,
@@ -305,6 +407,31 @@ export default function YouTubePlayer({
   }, [onTimeUpdate]);
 
   useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
+
+  const changePlaybackRate = useCallback((rate: number) => {
+    playbackRateRef.current = rate;
+    setPlaybackRateState(rate);
+    storePlaybackRate(rate);
+    playerRef.current?.setPlaybackRate?.(rate);
+  }, []);
+
+  const stepPlaybackRate = useCallback(
+    (direction: 1 | -1) => {
+      const index = PLAYBACK_RATES.indexOf(playbackRateRef.current);
+      const next =
+        PLAYBACK_RATES[
+          Math.min(PLAYBACK_RATES.length - 1, Math.max(0, index + direction))
+        ];
+      if (next !== undefined) {
+        changePlaybackRate(next);
+      }
+    },
+    [changePlaybackRate],
+  );
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       const isSeekSlider =
@@ -341,12 +468,21 @@ export default function YouTubePlayer({
       } else if (!isSeekSlider && event.key === "ArrowRight") {
         event.preventDefault();
         seekBy(5);
+      } else if (key === "m") {
+        event.preventDefault();
+        toggleMute();
+      } else if (event.key === ">") {
+        event.preventDefault();
+        stepPlaybackRate(1);
+      } else if (event.key === "<") {
+        event.preventDefault();
+        stepPlaybackRate(-1);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [seekBy, toggleFullscreen, togglePlayback]);
+  }, [seekBy, stepPlaybackRate, toggleFullscreen, toggleMute, togglePlayback]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -424,6 +560,9 @@ export default function YouTubePlayer({
               setIsPlaying(state === states?.PLAYING);
               setIsMuted(event.target.isMuted?.() ?? false);
               event.target.unloadModule?.("captions");
+              if (playbackRateRef.current !== 1) {
+                event.target.setPlaybackRate?.(playbackRateRef.current);
+              }
               if (isSettledState(state)) {
                 setHasPlaybackSettled(true);
               } else {
@@ -464,6 +603,15 @@ export default function YouTubePlayer({
               event.data === states?.ENDED
             ) {
               flushProgress(true);
+            }
+            if (event.data === states?.ENDED && !cancelled) {
+              onEndedRef.current?.();
+            }
+          },
+          onPlaybackRateChange: (event) => {
+            if (!cancelled && PLAYBACK_RATES.includes(event.data)) {
+              playbackRateRef.current = event.data;
+              setPlaybackRateState(event.data);
             }
           },
           onApiChange: (event) => {
@@ -549,62 +697,88 @@ export default function YouTubePlayer({
     };
   }, [videoId, flushProgress]);
 
+  const controlsVisible = !isPlaying || pointerActive || settingsOpen;
+
   return (
     <div
       ref={playerShellRef}
-      className={`youtube-player-shell overflow-hidden bg-zinc-100 ${
-        expanded
-          ? "flex h-full flex-col rounded-none border-0 shadow-none"
-          : "rounded-2xl border border-zinc-200 shadow-sm"
-      }`}
+      onPointerMove={revealControls}
+      onPointerLeave={() => setPointerActive(false)}
+      className={`youtube-player-shell group/player relative overflow-hidden bg-black ${
+        expanded ? "h-full" : "rounded-xl"
+      } ${controlsVisible ? "" : "cursor-none"}`}
     >
       <div
-        className={`youtube-video-frame relative w-full overflow-hidden bg-black ${
-          expanded ? "min-h-0 flex-1" : "aspect-video"
+        className={`youtube-video-frame relative w-full overflow-hidden ${
+          expanded ? "h-full" : "aspect-video"
         }`}
       >
         <div ref={containerRef} className="h-full w-full" />
+        {/* The embed ignores the pointer, so clicks on the video land here. */}
+        <div
+          aria-hidden
+          className="absolute inset-0"
+          onClick={() => {
+            if (settingsOpen) {
+              setSettingsOpen(false);
+            } else {
+              togglePlayback();
+            }
+          }}
+          onDoubleClick={() => void toggleFullscreen()}
+        />
         {(!isPlayerReady || !hasPlaybackSettled) && !playerError ? (
           <div
             role="status"
             aria-label="Loading video"
-            className="absolute inset-0 z-10 grid place-items-center bg-black text-sm text-white/70"
+            className="absolute inset-0 z-10 grid place-items-center bg-black"
           >
-            <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-white/25 border-t-white/90" />
+            <span className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-white/90" />
           </div>
         ) : null}
+        {playerError ? (
+          <p role="alert" className="absolute inset-0 z-10 grid place-items-center bg-black p-6 text-center text-sm text-white">
+            {playerError}
+          </p>
+        ) : null}
       </div>
+
+      {settingsOpen ? (
+        <div
+          role="menu"
+          aria-label="Playback speed"
+          className="absolute right-3 bottom-[68px] z-30 w-56 overflow-hidden rounded-xl bg-[rgba(28,28,28,0.9)] py-2 text-[#eee] backdrop-blur"
+        >
+          <p className="px-4 pt-1 pb-2 text-sm font-medium">Playback speed</p>
+          {PLAYBACK_RATES.map((rate) => (
+            <button
+              key={rate}
+              type="button"
+              role="menuitemradio"
+              aria-checked={playbackRate === rate}
+              onClick={() => {
+                changePlaybackRate(rate);
+                setSettingsOpen(false);
+              }}
+              className="flex h-9 w-full items-center gap-3 px-4 text-left text-sm hover:bg-white/10"
+            >
+              <span className="inline-flex w-5 justify-center">
+                {playbackRate === rate ? <Icon name="check" size={20} /> : null}
+              </span>
+              {rate === 1 ? "Normal" : rate}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <div
         role="group"
-        aria-label="Video controls. Space or K plays and pauses, F toggles fullscreen, J rewinds 10 seconds, L skips forward 10 seconds, and the left and right arrow keys seek by 5 seconds."
-        className="flex items-center gap-1 bg-white px-2 py-1 text-zinc-900"
+        aria-label="Video controls. Space or K plays and pauses, J and L skip 10 seconds, the arrow keys skip 5 seconds, M mutes, F toggles fullscreen, and Shift with comma or period changes the speed."
+        onFocus={revealControls}
+        className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-3 pt-10 transition-opacity duration-200 ${
+          controlsVisible ? "opacity-100" : "pointer-events-none opacity-0 focus-within:pointer-events-auto focus-within:opacity-100"
+        }`}
       >
-        <div className="flex shrink-0 items-center gap-0">
-          <button
-            type="button"
-            aria-label={isPlaying ? "Pause video" : "Play video"}
-            title={isPlaying ? "Pause video" : "Play video"}
-            disabled={!isPlayerReady}
-            onClick={togglePlayback}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[15px] text-zinc-800 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Icon
-              icon={isPlaying ? faPause : faPlay}
-            />
-          </button>
-          <button
-            type="button"
-            aria-label={isMuted ? "Unmute video" : "Mute video"}
-            title={isMuted ? "Unmute" : "Mute"}
-            disabled={!isPlayerReady}
-            onClick={toggleMute}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[15px] text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Icon
-              icon={isMuted ? faVolumeXmark : faVolumeHigh}
-            />
-          </button>
-        </div>
         <VideoTimeline
           key={videoId}
           currentTime={currentTime}
@@ -613,44 +787,77 @@ export default function YouTubePlayer({
           isPlaying={isPlaying}
           getCurrentTime={getCurrentTime}
           seekTo={seekTo}
+          left={
+            <>
+              {onPrevious ? (
+                <PlayerButton icon="skipPrevious" label="Previous lesson (Shift+P)" onClick={onPrevious} />
+              ) : null}
+              <PlayerButton
+                icon={isPlaying ? "pause" : "play"}
+                label={isPlaying ? "Pause (k)" : "Play (k)"}
+                disabled={!isPlayerReady}
+                onClick={togglePlayback}
+                size={32}
+              />
+              {onNext ? (
+                <PlayerButton icon="skipNext" label="Next lesson (Shift+N)" onClick={onNext} />
+              ) : null}
+              <PlayerButton
+                icon={isMuted ? "volumeOff" : "volume"}
+                label={isMuted ? "Unmute (m)" : "Mute (m)"}
+                disabled={!isPlayerReady}
+                onClick={toggleMute}
+              />
+            </>
+          }
+          right={
+            <>
+              {autoplay ? (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoplay.enabled}
+                  aria-label="Autoplay next lesson"
+                  title={autoplay.enabled ? "Autoplay is on" : "Autoplay is off"}
+                  onClick={() => autoplay.onChange(!autoplay.enabled)}
+                  className="inline-flex h-12 w-14 items-center justify-center"
+                >
+                  <span className="relative h-3.5 w-9 rounded-full bg-white/30">
+                    <span
+                      className={`absolute top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full shadow transition-all ${
+                        autoplay.enabled ? "left-4 bg-[#fff] text-black" : "left-0 bg-[#ccc] text-black/70"
+                      }`}
+                    >
+                      <Icon name={autoplay.enabled ? "play" : "pause"} size={12} />
+                    </span>
+                  </span>
+                </button>
+              ) : null}
+              <PlayerButton
+                icon="settings"
+                label="Settings"
+                onClick={() => setSettingsOpen((open) => !open)}
+                size={24}
+              />
+              {onToggleExpanded ? (
+                <PlayerButton
+                  icon="theater"
+                  label={expanded ? "Default view (t)" : "Theater mode (t)"}
+                  onClick={onToggleExpanded}
+                />
+              ) : null}
+              <PlayerButton
+                icon={isFullscreen ? "fullscreenExit" : "fullscreen"}
+                label={isFullscreen ? "Exit full screen (f)" : "Full screen (f)"}
+                disabled={!isPlayerReady}
+                onClick={() => void toggleFullscreen()}
+              />
+            </>
+          }
         />
-        {onToggleExpanded ? (
-          <button
-            type="button"
-            aria-label={expanded ? "Exit wide player" : "Expand player"}
-            title={expanded ? "Exit wide player (T)" : "Expand player (T)"}
-            onClick={onToggleExpanded}
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950"
-          >
-            <Icon
-              icon={
-                expanded
-                  ? faDownLeftAndUpRightToCenter
-                  : faUpRightAndDownLeftFromCenter
-              }
-            />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          title={isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
-          disabled={!isPlayerReady}
-          onClick={() => void toggleFullscreen()}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[15px] text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Icon
-            icon={isFullscreen ? faCompress : faExpand}
-          />
-        </button>
       </div>
-      {playerError ? (
-        <p role="alert" className="p-3 text-sm text-red-700">
-          {playerError}
-        </p>
-      ) : null}
       {fullscreenError ? (
-        <p role="alert" className="p-3 text-sm text-red-700">
+        <p role="alert" className="absolute top-3 left-3 z-30 rounded-lg bg-black/80 px-3 py-2 text-sm text-white">
           {fullscreenError}
         </p>
       ) : null}

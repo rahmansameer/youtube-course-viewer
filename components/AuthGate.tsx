@@ -1,21 +1,11 @@
 "use client";
 
-import {
-  faArrowRightFromBracket,
-  faChevronDown,
-  faCircleExclamation,
-  faDesktop,
-  faMoon,
-  faSun,
-} from "@fortawesome/free-solid-svg-icons";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   createContext,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
@@ -25,8 +15,8 @@ import type { User } from "@supabase/auth-js";
 
 import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
-import profilePhoto from "@/app/profile.jpg";
-import { HomeThemeProvider, useHomeTheme } from "@/components/HomeTheme";
+import { HomeThemeProvider } from "@/components/HomeTheme";
+import { Button, Toaster, inputClasses } from "@/components/ui";
 import {
   readAuthSessionHint,
   setAuthSessionHint,
@@ -145,7 +135,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       );
     }
 
-    if (pathname.startsWith("/watch/")) {
+    if (pathname.startsWith("/watch/") || pathname.startsWith("/course/")) {
       return (
         <AuthContext.Provider
           value={{ user, loading, cachedUserIdHint: storedUserIdHint, signOut }}
@@ -156,26 +146,24 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
 
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-4">
+      <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
         <PageTitle />
-        <div className="flex items-center gap-3 text-sm text-zinc-500">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-800" />
-          Connecting to your library
-        </div>
+        <span
+          role="status"
+          aria-label="Connecting to your library"
+          className="h-8 w-8 animate-spin rounded-full border-[3px] border-chip-hover border-t-fg-muted"
+        />
       </main>
     );
   }
 
   if (authError) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white px-4">
+      <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
         <PageTitle name="Error" />
-        <div className="max-w-md rounded-xl border border-red-200 bg-red-50 p-5 text-center">
-          <Icon
-            icon={faCircleExclamation}
-            className="mb-3 text-red-600"
-          />
-          <p role="alert" className="text-sm leading-6 text-red-800">
+        <div className="max-w-md text-center">
+          <Icon name="close" size={40} className="mx-auto mb-3 text-danger" />
+          <p role="alert" className="text-sm leading-6 text-fg">
             {authError}
           </p>
         </div>
@@ -247,24 +235,26 @@ function AuthForm({
     }
   };
 
+  const switchMode = () => {
+    setIsSignUp((value) => !value);
+    setError("");
+  };
+
   if (confirmationEmail) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12">
+      <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12">
         <PageTitle name="Check Your Inbox" />
-        <section className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 sm:p-10">
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-950">
+        <section className="w-full max-w-md rounded-xl border border-line p-8 sm:p-10">
+          <h1 className="text-3xl font-bold tracking-tight">
             Check your inbox
           </h1>
-          <p className="mt-4 text-base leading-7 text-zinc-700">
+          <p className="mt-4 text-base text-fg-muted">
             Confirmation link sent to{" "}
-            <span className="font-medium text-zinc-900">
-              {confirmationEmail}
-            </span>
-            .
+            <span className="font-medium text-fg">{confirmationEmail}</span>.
           </p>
-          <button
-            type="button"
-            className="mt-7 h-12 w-full rounded-lg bg-zinc-950 px-4 text-base font-bold text-white transition hover:bg-zinc-800"
+          <Button
+            variant="primary"
+            className="mt-7 h-12 w-full"
             onClick={() => {
               setConfirmationEmail("");
               setIsSignUp(false);
@@ -272,7 +262,7 @@ function AuthForm({
             }}
           >
             Back to sign in
-          </button>
+          </Button>
         </section>
       </main>
     );
@@ -281,21 +271,19 @@ function AuthForm({
   return (
     <main
       data-auth-fallback={hideForStoredSession ? "" : undefined}
-      className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12"
+      className="flex min-h-screen items-center justify-center bg-canvas px-4 py-12"
     >
       <PageTitle name={isSignUp ? "Sign Up" : "Sign In"} />
-      <section className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 sm:p-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-950">
-            {isSignUp ? "Create account" : "Sign in"}
-          </h1>
-        </div>
+      <section className="w-full max-w-md rounded-xl border border-line p-8 sm:p-10">
+        <h1 className="mb-8 text-3xl font-bold tracking-tight">
+          {isSignUp ? "Create account" : "Sign in"}
+        </h1>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div>
             <label
               htmlFor="auth-email"
-              className="mb-2 block text-base font-bold text-zinc-900"
+              className="mb-2 block text-sm font-medium"
             >
               Email
             </label>
@@ -307,13 +295,13 @@ function AuthForm({
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="name@example.com"
-              className="h-12 w-full rounded-lg border border-zinc-300 bg-white px-4 text-base font-medium text-zinc-950 outline-none transition placeholder:font-normal placeholder:text-zinc-400 hover:border-zinc-400 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
+              className={`${inputClasses} h-12`}
             />
           </div>
           <div>
             <label
               htmlFor="auth-password"
-              className="mb-2 block text-base font-bold text-zinc-900"
+              className="mb-2 block text-sm font-medium"
             >
               Password
             </label>
@@ -328,196 +316,42 @@ function AuthForm({
               placeholder={
                 isSignUp ? "Create a password" : "Enter your password"
               }
-              className="h-12 w-full rounded-lg border border-zinc-300 bg-white px-4 text-base font-medium text-zinc-950 outline-none transition placeholder:font-normal placeholder:text-zinc-400 hover:border-zinc-400 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
+              className={`${inputClasses} h-12`}
             />
             {isSignUp ? (
-              <p className="mt-2 text-sm leading-5 text-zinc-600">
+              <p className="mt-2 text-sm text-fg-muted">
                 Minimum 6 characters.
               </p>
             ) : null}
           </div>
 
           {error ? (
-            <p
-              role="alert"
-              className="rounded-lg bg-red-50 px-3 py-3 text-sm font-medium text-red-700"
-            >
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           ) : null}
-          <button
+
+          <Button
             type="submit"
+            variant="primary"
             disabled={submitting}
-            className="mt-1 h-12 w-full rounded-lg bg-zinc-950 px-4 text-base font-bold text-white transition hover:bg-zinc-800 disabled:cursor-wait disabled:opacity-60"
+            className="h-12 w-full"
           >
             {submitting ? "Please wait..." : isSignUp ? "Sign up" : "Sign in"}
-          </button>
+          </Button>
         </form>
 
-        <div className="mt-7 border-t border-zinc-100 pt-6 text-center">
-          <p className="text-base text-zinc-700">
-            {isSignUp ? "Have an account?" : "New here?"}{" "}
-            <button
-              type="button"
-              className="font-bold text-zinc-950 underline decoration-zinc-300 underline-offset-4 transition hover:decoration-zinc-950"
-              onClick={() => {
-                setIsSignUp((value) => !value);
-                setError("");
-              }}
-            >
-              {isSignUp ? "Sign in" : "Sign up"}
-            </button>
-          </p>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-export function AccountButton() {
-  const { user, signOut } = useAuth();
-  const { themeMode, setThemeMode } = useHomeTheme();
-  const [error, setError] = useState("");
-  const [open, setOpen] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const email = user?.email ?? "";
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !menuRef.current?.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  const handleSignOut = async () => {
-    setError("");
-    setSigningOut(true);
-    try {
-      await signOut();
-    } catch (signOutError) {
-      setError(
-        signOutError instanceof Error
-          ? signOutError.message
-          : "Could not sign out.",
-      );
-    } finally {
-      setSigningOut(false);
-    }
-  };
-
-  return (
-    <div ref={menuRef} className="relative">
-      <button
-        type="button"
-        aria-label="Open account menu"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex h-11 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2.5 text-zinc-700 transition hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20"
-      >
-        <Image
-          src={profilePhoto}
-          alt=""
-          className="h-7 w-7 rounded-full object-cover"
-        />
-        <Icon
-          icon={faChevronDown}
-          className="text-[10px] text-zinc-500"
-        />
-      </button>
-
-      {open ? (
-        <div
-          role="menu"
-          aria-label="Account menu"
-          className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 overflow-hidden rounded-lg border border-zinc-200 bg-white p-1.5"
-        >
-          <div className="px-3 py-2.5">
-            <p className="text-xs font-medium text-zinc-500">Signed in as</p>
-            <p className="mt-1 truncate text-sm font-medium text-zinc-900">
-              {email}
-            </p>
-          </div>
-          <div className="my-1 border-t border-zinc-100" />
-          <div className="px-3 py-2.5">
-            <p
-              id="theme-setting-label"
-              className="mb-2 text-xs font-medium text-zinc-500"
-            >
-              Theme
-            </p>
-            <div
-              role="group"
-              aria-labelledby="theme-setting-label"
-              className="flex rounded-md border border-zinc-200 p-0.5"
-            >
-              {(
-                [
-                  ["light", "Light", faSun],
-                  ["dark", "Dark", faMoon],
-                  ["system", "System", faDesktop],
-                ] as const
-              ).map(([mode, label, icon]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={themeMode === mode}
-                  aria-label={`${label} theme`}
-                  title={label}
-                  onClick={() => setThemeMode(mode)}
-                  className={`flex h-8 flex-1 items-center justify-center rounded text-sm transition ${
-                    themeMode === mode
-                      ? "bg-[var(--theme-toggle-active-background)] text-[var(--theme-toggle-active-foreground)] hover:opacity-90"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-                  }`}
-                >
-                  <Icon icon={icon} />
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="my-1 border-t border-zinc-100" />
-          {error ? (
-            <p role="alert" className="px-3 py-2 text-xs text-red-600">
-              {error}
-            </p>
-          ) : null}
+        <p className="mt-7 border-t border-line pt-6 text-center text-sm text-fg-muted">
+          {isSignUp ? "Have an account? " : "New here? "}
           <button
             type="button"
-            role="menuitem"
-            disabled={signingOut}
-            onClick={handleSignOut}
-            className="flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm text-zinc-700 transition hover:bg-zinc-50 hover:text-zinc-950 disabled:opacity-60"
+            className="font-medium text-link hover:underline"
+            onClick={switchMode}
           >
-            <Icon
-              icon={faArrowRightFromBracket}
-              className="w-3 text-xs text-zinc-500"
-            />
-            {signingOut ? "Signing out..." : "Sign out"}
+            {isSignUp ? "Sign in" : "Sign up"}
           </button>
-        </div>
-      ) : null}
-    </div>
+        </p>
+      </section>
+    </main>
   );
 }

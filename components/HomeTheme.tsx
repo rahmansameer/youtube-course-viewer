@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { Toaster } from "@/components/ui";
+
 export type ThemeMode = "dark" | "light" | "system";
 
 type HomeThemeContextValue = {
@@ -58,8 +60,9 @@ export function HomeThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <HomeThemeContext.Provider value={{ themeMode, setThemeMode }}>
-      <div className="home-theme min-h-screen" data-theme={themeMode}>
+      <div className="min-h-screen bg-canvas text-fg" data-theme={themeMode}>
         {children}
+        <Toaster />
       </div>
     </HomeThemeContext.Provider>
   );

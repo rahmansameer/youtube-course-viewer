@@ -1,1 +1,1 @@
-export const SITE_NAME = "YouTube Course Viewer";
+export const SITE_NAME = "Course Viewer";

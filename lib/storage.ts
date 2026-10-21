@@ -14,6 +14,35 @@ export type VideoRecord = {
   updatedAt: string;
   notes: string;
   completed: boolean;
+  // False for playlist lessons that weren't also added on their own; those
+  // stay off the home page.
+  standalone: boolean;
+};
+
+export type CourseRecord = {
+  // The YouTube playlist ID.
+  id: string;
+  youtubeUrl: string;
+  title: string;
+  description: string;
+  channel: string;
+  thumbnail: string;
+  lessonIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CourseRow = {
+  user_id: string;
+  id: string;
+  youtube_url: string;
+  title: string;
+  description: string;
+  channel: string;
+  thumbnail: string;
+  lesson_ids: string[];
+  created_at: string;
+  updated_at: string;
 };
 
 type VideoRow = {
@@ -29,15 +58,47 @@ type VideoRow = {
   updated_at: string;
   notes: string;
   completed: boolean;
+  // Missing until supabase/migrations/002_playlist_courses.sql has been run.
+  standalone?: boolean;
 };
+
+export const COURSES_SETUP_MESSAGE =
+  "Playlist courses need a one-time database update. Run supabase/migrations/002_playlist_courses.sql in the Supabase SQL Editor, then try again.";
+
+// PostgREST reports a table or column that doesn't exist yet with these codes.
+function isMissingSchemaError(error: unknown) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : "";
+  return ["PGRST204", "PGRST205", "42P01", "42703"].includes(code);
+}
 
 const LEGACY_STORAGE_KEY = "course-shelf-v1";
 const PLAYBACK_CHECKPOINT_PREFIX = "youtube-course-viewer-playback-v1";
 const VIDEO_CACHE_PREFIX = "youtube-course-viewer-video-v1";
 const VIDEOS_CACHE_PREFIX = "youtube-course-viewer-videos-v1";
+const COURSES_CACHE_PREFIX = "youtube-course-viewer-courses-v1";
+
+// Screens that show the library re-read the caches when they change.
+const libraryListeners = new Set<() => void>();
+
+export function subscribeToLibraryCache(listener: () => void) {
+  libraryListeners.add(listener);
+  return () => {
+    libraryListeners.delete(listener);
+  };
+}
+
+function emitLibraryChange() {
+  for (const listener of libraryListeners) {
+    listener();
+  }
+}
 
 const videoCache = new Map<string, VideoRecord>();
 const videosCache = new Map<string, VideoRecord[]>();
+const coursesCache = new Map<string, CourseRecord[]>();
 
 export type PlaybackCheckpoint = {
   currentTime: number;
@@ -55,6 +116,64 @@ function getVideoCacheKey(userId: string, id: string) {
 
 function getVideosCacheKey(userId: string) {
   return `${VIDEOS_CACHE_PREFIX}:${encodeURIComponent(userId)}`;
+}
+
+function getCoursesCacheKey(userId: string) {
+  return `${COURSES_CACHE_PREFIX}:${encodeURIComponent(userId)}`;
+}
+
+export function getCachedCourses(userId: string): CourseRecord[] | null {
+  const key = getCoursesCacheKey(userId);
+  const inMemoryCourses = coursesCache.get(key);
+  if (inMemoryCourses) {
+    return inMemoryCourses;
+  }
+
+  let value: unknown;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return null;
+    }
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new Error("The cached playlist courses could not be read.", {
+      cause: error,
+    });
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const courses = value
+    .map((item) => normalizeCourse(item))
+    .filter((course): course is CourseRecord => course !== null);
+  coursesCache.set(key, courses);
+  return courses;
+}
+
+export function cacheCourses(userId: string, courses: CourseRecord[]) {
+  const key = getCoursesCacheKey(userId);
+  coursesCache.set(key, courses);
+  emitLibraryChange();
+  try {
+    window.localStorage.setItem(key, JSON.stringify(courses));
+  } catch (error) {
+    throw new Error("Your courses could not be cached on this device.", {
+      cause: error,
+    });
+  }
+}
+
+// Lets the watch page switch lessons without a round trip: the course page
+// loads every lesson row up front and hands them to getCachedVideo.
+export function primeVideoCache(userId: string, videos: VideoRecord[]) {
+  for (const video of videos) {
+    const key = getVideoCacheKey(userId, video.id);
+    if (!videoCache.has(key)) {
+      videoCache.set(key, video);
+    }
+  }
 }
 
 export function getCachedVideos(userId: string): VideoRecord[] | null {
@@ -101,6 +220,7 @@ export function getCachedVideos(userId: string): VideoRecord[] | null {
 export function cacheVideos(userId: string, videos: VideoRecord[]) {
   const key = getVideosCacheKey(userId);
   videosCache.set(key, videos);
+  emitLibraryChange();
   try {
     window.localStorage.setItem(key, JSON.stringify(videos));
     window.sessionStorage.removeItem(key);
@@ -113,9 +233,13 @@ export function cacheVideos(userId: string, videos: VideoRecord[]) {
 
 export function clearCachedVideos(userId: string) {
   const key = getVideosCacheKey(userId);
+  const coursesKey = getCoursesCacheKey(userId);
   videosCache.delete(key);
+  coursesCache.delete(coursesKey);
+  emitLibraryChange();
   try {
     window.localStorage.removeItem(key);
+    window.localStorage.removeItem(coursesKey);
     window.sessionStorage.removeItem(key);
   } catch (error) {
     throw new Error("The cached course library could not be removed.", {
@@ -318,11 +442,77 @@ function normalizeVideo(value: unknown): VideoRecord | null {
         : now,
     notes: typeof value.notes === "string" ? value.notes : "",
     completed: Boolean(value.completed),
+    standalone: value.standalone !== false,
   };
 }
 
-function toRow(userId: string, video: VideoRecord): VideoRow {
+function normalizeCourse(value: unknown): CourseRecord | null {
+  if (!isObject(value) || typeof value.id !== "string") {
+    return null;
+  }
+
+  const now = new Date().toISOString();
   return {
+    id: value.id,
+    youtubeUrl: typeof value.youtubeUrl === "string" ? value.youtubeUrl : "",
+    title: typeof value.title === "string" ? value.title : "Untitled course",
+    description: typeof value.description === "string" ? value.description : "",
+    channel: typeof value.channel === "string" ? value.channel : "",
+    thumbnail: typeof value.thumbnail === "string" ? value.thumbnail : "",
+    lessonIds: Array.isArray(value.lessonIds)
+      ? value.lessonIds.filter((id): id is string => typeof id === "string")
+      : [],
+    createdAt:
+      typeof value.createdAt === "string" && value.createdAt
+        ? value.createdAt
+        : now,
+    updatedAt:
+      typeof value.updatedAt === "string" && value.updatedAt
+        ? value.updatedAt
+        : now,
+  };
+}
+
+function courseToRow(userId: string, course: CourseRecord): CourseRow {
+  return {
+    user_id: userId,
+    id: course.id,
+    youtube_url: course.youtubeUrl,
+    title: course.title,
+    description: course.description,
+    channel: course.channel,
+    thumbnail: course.thumbnail,
+    lesson_ids: course.lessonIds,
+    created_at: course.createdAt,
+    updated_at: course.updatedAt,
+  };
+}
+
+function courseFromRow(row: CourseRow): CourseRecord {
+  return {
+    id: row.id,
+    youtubeUrl: row.youtube_url,
+    title: row.title,
+    description: row.description,
+    channel: row.channel,
+    thumbnail: row.thumbnail,
+    lessonIds: row.lesson_ids ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// `standalone` is only sent when it matters, so single videos still save on a
+// database that hasn't had the playlist migration yet.
+function toRow(
+  userId: string,
+  video: VideoRecord,
+  writeStandalone = false,
+): VideoRow {
+  return {
+    ...(writeStandalone || !video.standalone
+      ? { standalone: video.standalone }
+      : {}),
     user_id: userId,
     id: video.id,
     youtube_url: video.youtubeUrl,
@@ -351,6 +541,7 @@ function fromRow(row: VideoRow): VideoRecord {
     updatedAt: row.updated_at,
     notes: row.notes,
     completed: row.completed,
+    standalone: row.standalone !== false,
   };
 }
 
@@ -431,13 +622,201 @@ export async function getVideo(
   return data ? fromRow(data as VideoRow) : null;
 }
 
-export async function saveVideo(userId: string, video: VideoRecord) {
+export async function saveVideo(
+  userId: string,
+  video: VideoRecord,
+  { writeStandalone = false } = {},
+) {
   const { error } = await getSupabaseClient()
     .from("course_videos")
-    .upsert(toRow(userId, video), { onConflict: "user_id,id" });
+    .upsert(toRow(userId, video, writeStandalone), {
+      onConflict: "user_id,id",
+    });
 
   if (error) {
     throw error;
+  }
+}
+
+const ID_CHUNK_SIZE = 150;
+
+function chunk<T>(items: T[], size = ID_CHUNK_SIZE) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+export async function loadVideosByIds(
+  userId: string,
+  ids: string[],
+): Promise<VideoRecord[]> {
+  const pages = await Promise.all(
+    chunk(ids).map(async (idChunk) => {
+      const { data, error } = await getSupabaseClient()
+        .from("course_videos")
+        .select("*")
+        .eq("user_id", userId)
+        .in("id", idChunk);
+      if (error) {
+        throw error;
+      }
+      return (data as VideoRow[]).map(fromRow);
+    }),
+  );
+  return pages.flat();
+}
+
+// Returns null when the courses table doesn't exist yet, so the library can
+// still show single videos before the playlist migration has been run.
+export async function loadCourses(
+  userId: string,
+): Promise<CourseRecord[] | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("courses")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingSchemaError(error)) {
+      return null;
+    }
+    throw error;
+  }
+
+  return (data as CourseRow[]).map(courseFromRow);
+}
+
+export async function getCourse(
+  userId: string,
+  id: string,
+): Promise<CourseRecord | null> {
+  const { data, error } = await getSupabaseClient()
+    .from("courses")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingSchemaError(error)) {
+      return null;
+    }
+    throw error;
+  }
+
+  return data ? courseFromRow(data as CourseRow) : null;
+}
+
+// Adds lesson rows that don't exist yet; rows already in the library keep
+// their progress, notes and standalone flag.
+export async function addLessonVideos(userId: string, lessons: VideoRecord[]) {
+  for (const lessonChunk of chunk(lessons)) {
+    const { error } = await getSupabaseClient()
+      .from("course_videos")
+      .upsert(
+        lessonChunk.map((lesson) =>
+          toRow(userId, { ...lesson, standalone: false }, true),
+        ),
+        { onConflict: "user_id,id", ignoreDuplicates: true },
+      );
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        throw new Error(COURSES_SETUP_MESSAGE, { cause: error });
+      }
+      throw error;
+    }
+  }
+}
+
+export async function saveCourse(
+  userId: string,
+  course: CourseRecord,
+  lessons: VideoRecord[],
+) {
+  await addLessonVideos(userId, lessons);
+  const { error } = await getSupabaseClient()
+    .from("courses")
+    .upsert(courseToRow(userId, course), { onConflict: "user_id,id" });
+  if (error) {
+    if (isMissingSchemaError(error)) {
+      throw new Error(COURSES_SETUP_MESSAGE, { cause: error });
+    }
+    throw error;
+  }
+}
+
+export async function updateCourse(
+  userId: string,
+  id: string,
+  updates: Partial<
+    Pick<
+      CourseRecord,
+      "title" | "description" | "channel" | "thumbnail" | "lessonIds"
+    >
+  >,
+) {
+  const row: Partial<CourseRow> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (updates.title !== undefined) row.title = updates.title;
+  if (updates.description !== undefined) row.description = updates.description;
+  if (updates.channel !== undefined) row.channel = updates.channel;
+  if (updates.thumbnail !== undefined) row.thumbnail = updates.thumbnail;
+  if (updates.lessonIds !== undefined) row.lesson_ids = updates.lessonIds;
+
+  const { data, error } = await getSupabaseClient()
+    .from("courses")
+    .update(row)
+    .eq("user_id", userId)
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    throw new Error("This course is no longer in your library.");
+  }
+}
+
+// Removes the course and the lesson rows only it was using. Lessons that are
+// also standalone videos or part of another course are kept.
+export async function deleteCourse(
+  userId: string,
+  course: CourseRecord,
+  otherCourses: CourseRecord[],
+) {
+  const { data, error } = await getSupabaseClient()
+    .from("courses")
+    .delete()
+    .eq("user_id", userId)
+    .eq("id", course.id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    throw new Error("This course is no longer in your library.");
+  }
+
+  const sharedIds = new Set(otherCourses.flatMap((other) => other.lessonIds));
+  const orphanIds = course.lessonIds.filter((id) => !sharedIds.has(id));
+  for (const idChunk of chunk(orphanIds)) {
+    const { error: lessonsError } = await getSupabaseClient()
+      .from("course_videos")
+      .delete()
+      .eq("user_id", userId)
+      .eq("standalone", false)
+      .in("id", idChunk);
+    if (lessonsError) {
+      throw lessonsError;
+    }
   }
 }
 
@@ -461,6 +840,7 @@ export async function updateVideo(
   if (updates.updatedAt !== undefined) row.updated_at = updates.updatedAt;
   if (updates.notes !== undefined) row.notes = updates.notes;
   if (updates.completed !== undefined) row.completed = updates.completed;
+  if (updates.standalone !== undefined) row.standalone = updates.standalone;
 
   const { data, error } = await getSupabaseClient()
     .from("course_videos")
@@ -476,6 +856,32 @@ export async function updateVideo(
   if (!data) {
     throw new Error("This video is no longer in your library.");
   }
+}
+
+// Marks many videos complete, or resets their progress, in a few requests.
+export async function updateVideoProgressMany(
+  userId: string,
+  ids: string[],
+  updates: { completed: boolean; currentTime?: number },
+) {
+  const row: Partial<VideoRow> = {
+    completed: updates.completed,
+    updated_at: new Date().toISOString(),
+  };
+  if (updates.currentTime !== undefined) {
+    row.current_time_seconds = updates.currentTime;
+  }
+  for (const idChunk of chunk(ids)) {
+    const { error } = await getSupabaseClient()
+      .from("course_videos")
+      .update(row)
+      .eq("user_id", userId)
+      .in("id", idChunk);
+    if (error) {
+      throw error;
+    }
+  }
+  return row.updated_at as string;
 }
 
 export async function deleteVideo(userId: string, id: string) {

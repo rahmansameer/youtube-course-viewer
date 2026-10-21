@@ -1,26 +1,40 @@
 "use client";
 
 import {
-  faBold,
-  faClock,
-  faListOl,
-  faListUl,
-} from "@fortawesome/free-solid-svg-icons";
-import {
   type ClipboardEvent,
+  type MouseEvent,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
 
-import Icon from "@/components/Icon";
+import { type IconName } from "@/components/Icon";
+import { IconButton } from "@/components/ui";
 import { formatTime } from "@/lib/youtube";
 
 type CourseNotesProps = {
   notes: string;
+  videoId: string;
   currentTime: number;
   onChange: (notes: string) => void;
+  // Timestamp links in the notes jump the player here.
+  onSeek: (seconds: number) => void;
+  onClose?: () => void;
 };
+
+// Timestamps are saved as ordinary YouTube links ("watch?v=ID&t=83s"), so
+// they keep working if the notes are copied anywhere else.
+function readTimestamp(href: string, videoId: string) {
+  try {
+    const url = new URL(href);
+    const seconds = Number(url.searchParams.get("t")?.replace(/s$/, ""));
+    return url.searchParams.get("v") === videoId && Number.isFinite(seconds)
+      ? seconds
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function escapeHtml(value: string) {
   return value
@@ -194,7 +208,7 @@ function cleanNode(node: Node, doc: Document): Node[] {
   return [element];
 }
 
-function sanitizeNotesHtml(html: string, wrapLines: boolean) {
+export function sanitizeNotesHtml(html: string, wrapLines: boolean) {
   const template = document.createElement("template");
   template.innerHTML = html;
   const doc = template.content.ownerDocument;
@@ -254,7 +268,7 @@ function trimLeadingBlanks(container: Element) {
   }
 }
 
-function notesToHtml(notes: string) {
+export function notesToHtml(notes: string) {
   if (!notes) {
     return "";
   }
@@ -277,8 +291,11 @@ function serializeEditor(editor: HTMLElement) {
 
 export default function CourseNotes({
   notes,
+  videoId,
   currentTime,
   onChange,
+  onSeek,
+  onClose,
 }: CourseNotesProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const lastEmittedNotesRef = useRef<string | null>(null);
@@ -330,57 +347,70 @@ export default function CourseNotes({
       return;
     }
     editor.focus();
-    document.execCommand("insertText", false, `[${formatTime(currentTime)}] `);
+    const seconds = Math.floor(currentTime);
+    document.execCommand(
+      "insertHTML",
+      false,
+      `<a href="https://www.youtube.com/watch?v=${videoId}&amp;t=${seconds}s">${formatTime(seconds)}</a>&nbsp;`,
+    );
     saveEditor(editor);
   };
 
-  const buttons = [
-    {
-      label: "Bold",
-      icon: faBold,
-      onClick: () => format("bold"),
-    },
-    {
-      label: "Bulleted list",
-      icon: faListUl,
-      onClick: () => format("insertUnorderedList"),
-    },
-    {
-      label: "Numbered list",
-      icon: faListOl,
-      onClick: () => format("insertOrderedList"),
-    },
-    {
-      label: "Insert timestamp",
-      icon: faClock,
-      onClick: insertTimestamp,
-    },
+  const followLink = (event: MouseEvent<HTMLDivElement>) => {
+    const link =
+      event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!(link instanceof HTMLAnchorElement)) {
+      return;
+    }
+    event.preventDefault();
+    const seconds = readTimestamp(link.href, videoId);
+    if (seconds !== null) {
+      onSeek(seconds);
+    } else {
+      window.open(link.href, "_blank", "noopener,noreferrer");
+    }
+  };
+
+  const buttons: { label: string; icon: IconName; onClick: () => void }[] = [
+    { label: "Bold", icon: "bold", onClick: () => format("bold") },
+    { label: "Bulleted list", icon: "bulletList", onClick: () => format("insertUnorderedList") },
+    { label: "Numbered list", icon: "numberedList", onClick: () => format("insertOrderedList") },
   ];
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      <header className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-2.5">
-        <h2 className="text-lg font-semibold text-zinc-900">Notes</h2>
-        <div
-          role="toolbar"
-          aria-label="Note formatting"
-          className="flex items-center gap-1"
-        >
-          {buttons.map(({ label, icon, onClick }) => (
-            <button
-              key={label}
-              type="button"
-              aria-label={label}
-              title={label}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={onClick}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500"
-            >
-              <Icon icon={icon} />
-            </button>
-          ))}
-        </div>
+    <section
+      aria-label="Notes"
+      className="flex h-[min(520px,calc(100dvh-140px))] min-h-80 flex-col overflow-hidden rounded-xl border border-line"
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-line py-2 pr-2 pl-4">
+        <h2 className="text-xl font-bold">Notes</h2>
+        {onClose ? <IconButton icon="close" label="Close notes" onClick={onClose} /> : null}
       </header>
+      <div
+        role="toolbar"
+        aria-label="Note formatting"
+        className="flex items-center gap-1 border-b border-line px-2 py-1"
+      >
+        {buttons.map(({ label, icon, onClick }) => (
+          <IconButton
+            key={label}
+            icon={icon}
+            label={label}
+            size="sm"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onClick}
+          />
+        ))}
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={insertTimestamp}
+          title="Insert a link to the current moment"
+          className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-link transition-colors hover:bg-link/10"
+        >
+          + {formatTime(currentTime)}
+        </button>
+      </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div
@@ -393,12 +423,13 @@ export default function CourseNotes({
           onInput={(event) => {
             saveEditor(event.currentTarget);
           }}
+          onClick={followLink}
           onPaste={pasteNotes}
-          className="relative z-0 h-full min-h-0 w-full overflow-x-hidden overflow-y-auto bg-transparent px-4 py-3 text-base leading-7 text-zinc-800 [overflow-wrap:anywhere] outline-none focus:ring-0 course-notes-editor"
+          className="course-notes-editor scroll-thin relative z-0 h-full min-h-0 w-full overflow-x-hidden overflow-y-auto bg-transparent px-4 py-3 text-sm leading-6 text-fg [overflow-wrap:anywhere] outline-none"
         />
         {isEmpty ? (
-          <span className="pointer-events-none absolute left-4 top-3 z-10 text-base leading-7 text-zinc-400">
-            Write your notes...
+          <span className="pointer-events-none absolute top-3 left-4 z-10 text-sm leading-6 text-fg-muted">
+            Write notes for this lesson. Add a timestamp to jump back here later.
           </span>
         ) : null}
       </div>

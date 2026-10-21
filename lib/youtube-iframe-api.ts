@@ -5,12 +5,15 @@ export type YouTubePlayerInstance = {
   getCurrentTime?: () => number;
   getDuration?: () => number;
   getIframe?: () => HTMLIFrameElement;
+  getPlaybackRate?: () => number;
+  getPlaylist?: () => string[] | null;
   getPlayerState?: () => number;
   isMuted?: () => boolean;
   mute?: () => void;
   pauseVideo?: () => void;
   playVideo?: () => void;
   seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
+  setPlaybackRate?: (rate: number) => void;
   unMute?: () => void;
   unloadModule?: (module: string) => void;
 };
@@ -28,6 +31,10 @@ type YouTubePlayerOptions = {
     }) => void;
     onError?: (event: { data: number }) => void;
     onApiChange?: (event: { target: YouTubePlayerInstance }) => void;
+    onPlaybackRateChange?: (event: {
+      data: number;
+      target: YouTubePlayerInstance;
+    }) => void;
   };
 };
 
@@ -89,13 +96,13 @@ export function preloadYouTubeIframeApi() {
   }
 }
 
-// Reads a video's length without showing it, using an off-screen muted
-// player. Resolves null if YouTube does not report a duration in time, so
-// callers can save the course anyway and let the watch page fill it in later.
-export async function fetchVideoDuration(
-  videoId: string,
-  timeoutMs = 8000,
-): Promise<number | null> {
+// Creates an off-screen, muted player and polls it until `read` returns a
+// value, then destroys it. Resolves null if YouTube never reports one in time.
+async function readFromHiddenPlayer<T>(
+  options: Pick<YouTubePlayerOptions, "videoId" | "playerVars">,
+  read: (player: YouTubePlayerInstance) => T | null,
+  timeoutMs: number,
+): Promise<T | null> {
   if (typeof window === "undefined") {
     return null;
   }
@@ -117,12 +124,12 @@ export async function fetchVideoDuration(
   container.appendChild(mount);
   document.body.appendChild(container);
 
-  return new Promise<number | null>((resolve) => {
+  return new Promise<T | null>((resolve) => {
     let player: YouTubePlayerInstance | null = null;
     let pollId = 0;
     let settled = false;
 
-    const finish = (duration: number | null) => {
+    const finish = (value: T | null) => {
       if (settled) {
         return;
       }
@@ -135,33 +142,72 @@ export async function fetchVideoDuration(
         // The player may already be gone; the container is removed anyway.
       }
       container.remove();
-      resolve(duration);
+      resolve(value);
     };
 
     const timeoutId = window.setTimeout(() => finish(null), timeoutMs);
 
     player = new window.YT!.Player(mount, {
-      videoId,
+      ...options,
       width: 200,
       height: 200,
-      playerVars: { autoplay: 0, controls: 0, mute: 1, playsinline: 1 },
+      playerVars: {
+        autoplay: 0,
+        controls: 0,
+        mute: 1,
+        playsinline: 1,
+        ...options.playerVars,
+      },
       events: {
         onReady: (event) => {
-          const read = () => {
-            const duration = event.target.getDuration?.() ?? 0;
-            if (Number.isFinite(duration) && duration > 0) {
-              finish(duration);
+          const poll = () => {
+            const value = read(event.target);
+            if (value !== null) {
+              finish(value);
             }
           };
-          read();
+          poll();
           if (!settled) {
-            pollId = window.setInterval(read, 250);
+            pollId = window.setInterval(poll, 250);
           }
         },
         onError: () => finish(null),
       },
     });
   });
+}
+
+// Reads a video's length without showing it. Resolves null if YouTube does
+// not report a duration in time, so callers can save the course anyway and
+// let the watch page fill it in later.
+export function fetchVideoDuration(
+  videoId: string,
+  timeoutMs = 8000,
+): Promise<number | null> {
+  return readFromHiddenPlayer(
+    { videoId },
+    (player) => {
+      const duration = player.getDuration?.() ?? 0;
+      return Number.isFinite(duration) && duration > 0 ? duration : null;
+    },
+    timeoutMs,
+  );
+}
+
+// Lists a playlist's video IDs through the embedded player. Used when the
+// server can't read the playlist page; it has no titles or durations.
+export function fetchPlaylistVideoIds(
+  playlistId: string,
+  timeoutMs = 12000,
+): Promise<string[] | null> {
+  return readFromHiddenPlayer(
+    { playerVars: { listType: "playlist", list: playlistId } },
+    (player) => {
+      const ids = player.getPlaylist?.();
+      return Array.isArray(ids) && ids.length > 0 ? ids : null;
+    },
+    timeoutMs,
+  );
 }
 
 declare global {

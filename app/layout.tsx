@@ -59,8 +59,9 @@ ${AUTH_SESSION_HINT_SCRIPT}`,
         ) : null}
         <link rel="preconnect" href="https://www.youtube.com" />
         <link rel="preconnect" href="https://i.ytimg.com" />
+        <link rel="preconnect" href="https://yt3.googleusercontent.com" />
       </head>
-      <body className="min-h-full bg-stone-100 text-zinc-900">
+      <body className="min-h-full bg-canvas text-fg">
         <AuthGate>{children}</AuthGate>
       </body>
     </html>
