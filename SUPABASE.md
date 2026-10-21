@@ -28,3 +28,23 @@ signed-in account can only access its own course rows.
 On the first sign-in in a browser, the app imports the existing
 `course-shelf-v1` local library into that account. It removes the browser copy
 only after Supabase confirms the import succeeded.
+
+## YouTube Data API key (recommended when deployed)
+
+Video descriptions, playlists and channel pictures come from YouTube. On
+your own computer they're read from youtube.com directly, but YouTube often
+blocks those reads from hosting providers' servers (such as Vercel). With a
+YouTube Data API key the server uses Google's official API instead, which
+always works, and falls back to youtube.com only when the API has no answer.
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create a
+   project (or pick one) and enable **YouTube Data API v3**.
+2. Under **APIs & Services → Credentials**, choose **Create credentials → API
+   key**. Restrict the key to the YouTube Data API v3.
+3. Add it as `YOUTUBE_API_KEY` in `.env.local`, and in Vercel under
+   **Project → Settings → Environment Variables**, then redeploy.
+
+The free quota is 10,000 units a day. Looking up one video costs 1 unit, and
+the app keeps what it has looked up on each device, so a personal library
+stays far below the limit.
+
