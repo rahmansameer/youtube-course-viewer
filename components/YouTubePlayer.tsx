@@ -111,7 +111,7 @@ function VideoTimeline({
   return (
     <>
       <span className="shrink-0 text-sm font-medium tabular-nums text-zinc-700">
-        {formatTime(displayTime)} / {formatTime(safeDuration)}
+        {formatTime(displayTime)}
       </span>
       <div className="relative flex h-5 min-w-0 flex-1 items-center">
         <div
@@ -145,6 +145,9 @@ function VideoTimeline({
           className="youtube-seekbar relative z-10 h-5 w-full cursor-pointer disabled:cursor-not-allowed"
         />
       </div>
+      <span className="shrink-0 text-sm font-medium tabular-nums text-zinc-500">
+        {formatTime(safeDuration)}
+      </span>
     </>
   );
 }
