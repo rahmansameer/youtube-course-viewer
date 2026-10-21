@@ -8,7 +8,7 @@ import { useThumbnailTint } from "@/components/useThumbnailTint";
 import { DurationBadge, IconButton, Menu, ResumeBar, type MenuItem } from "@/components/ui";
 import { type LibraryItem } from "@/lib/library";
 import { formatDuration } from "@/lib/youtube";
-import { preloadYouTubeIframeApi } from "@/lib/youtube-iframe-api";
+import { warmYouTubePlayer } from "@/lib/youtube-iframe-api";
 import { getCachedChannelName, subscribeToChannels } from "@/lib/youtube-metadata";
 
 export type LibraryCardAction = "edit" | "complete" | "reset" | "delete";
@@ -121,6 +121,7 @@ export default function LibraryCard({
 }: LibraryCardProps) {
   const channel = useItemChannel(item);
   const tint = useThumbnailTint(item.thumbnail);
+  const warm = () => warmYouTubePlayer(item.kind === "video" ? item.id : item.resumeLesson?.id);
   return (
     // self-start: only as tall as this card, not the tallest in its row.
     <article className="group relative isolate flex min-w-0 flex-col self-start">
@@ -134,8 +135,8 @@ export default function LibraryCard({
       <Link
         href={item.href}
         aria-label={item.title}
-        onPointerEnter={preloadYouTubeIframeApi}
-        onFocus={preloadYouTubeIframeApi}
+        onPointerEnter={warm}
+        onFocus={warm}
         className="block rounded-xl"
       >
         <LibraryThumbnail item={item} eager={eagerThumbnail} />

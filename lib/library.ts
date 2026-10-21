@@ -82,7 +82,7 @@ function videoItem(video: VideoRecord): LibraryItem {
   return {
     kind: "video",
     id: video.id,
-    href: `/watch/${video.id}`,
+    href: `/watch?v=${video.id}`,
     youtubeUrl: video.youtubeUrl,
     title: video.title,
     description: video.description,
@@ -189,7 +189,7 @@ function playlistItem(
   return {
     kind: "playlist",
     id: course.id,
-    href: `/course/${course.id}`,
+    href: `/course?list=${course.id}`,
     youtubeUrl: course.youtubeUrl || getPlaylistUrl(course.id),
     title: course.title,
     description: course.description,

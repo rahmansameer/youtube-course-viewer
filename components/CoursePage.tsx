@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -85,7 +85,9 @@ function readCachedCourse(userId: string | null | undefined, courseId: string) {
 
 function readLessonParam() {
   try {
-    return new URLSearchParams(window.location.search).get("lesson");
+    // ?v= since the static /course page; ?lesson= on older links.
+    const params = new URLSearchParams(window.location.search);
+    return params.get("v") ?? params.get("lesson");
   } catch {
     return null;
   }
@@ -131,8 +133,7 @@ function updateLibraryCache(
 }
 
 export default function CoursePage() {
-  const params = useParams<{ id: string }>();
-  const courseId = typeof params?.id === "string" ? params.id : "";
+  const courseId = useSearchParams().get("list") ?? "";
   const { user, cachedUserIdHint } = useAuth();
   const userId = user?.id;
   const cacheUserId = userId ?? cachedUserIdHint;
@@ -158,15 +159,16 @@ export default function CoursePage() {
     preloadYouTubeIframeApi();
   }, []);
 
-  // The page is server-rendered as an empty shell, so browser-only state is
-  // read before the first paint instead of during the first render.
+  // The page is a static shell, so browser-only state is read before the
+  // first paint instead of during the first render. It runs again when a
+  // link opens another course, since the same page stays mounted.
   useLayoutEffect(() => {
     setSelectedLessonId(readLessonParam());
     setAutoplayNext(readAutoplayPreference());
     const start = takeStartParam();
     const lessonId = readLessonParam();
     pendingStartRef.current = start !== null && lessonId ? { lessonId, start } : null;
-  }, []);
+  }, [courseId]);
 
   useLayoutEffect(() => {
     const cached = readCachedCourse(cacheUserId, courseId);
@@ -174,6 +176,11 @@ export default function CoursePage() {
       setCourse(cached.course);
       setLessons(cached.lessons);
       setLoading(false);
+    } else {
+      // Don't keep showing the previous course while this one loads.
+      setCourse(null);
+      setLessons([]);
+      setLoading(true);
     }
   }, [cacheUserId, courseId]);
 
@@ -350,18 +357,21 @@ export default function CoursePage() {
     return () => window.clearTimeout(timeout);
   }, [nextLessonId]);
 
-  const goToLesson = useCallback((lessonId: string) => {
-    setSelectedLessonId(lessonId);
-    try {
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}?lesson=${encodeURIComponent(lessonId)}`,
-      );
-    } catch {
-      // The lesson still changes; only the address bar stays behind.
-    }
-  }, []);
+  const goToLesson = useCallback(
+    (lessonId: string) => {
+      setSelectedLessonId(lessonId);
+      try {
+        window.history.replaceState(
+          null,
+          "",
+          `/course?list=${encodeURIComponent(courseId)}&v=${encodeURIComponent(lessonId)}`,
+        );
+      } catch {
+        // The lesson still changes; only the address bar stays behind.
+      }
+    },
+    [courseId],
+  );
 
   const handleEnded = useCallback(() => {
     if (autoplayNext && nextLesson) {

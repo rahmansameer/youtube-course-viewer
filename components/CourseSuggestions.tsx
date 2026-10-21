@@ -8,19 +8,20 @@ import { LibraryThumbnail, useItemChannel } from "@/components/LibraryCard";
 import { useLibrary } from "@/components/useLibrary";
 import { useThumbnailTint } from "@/components/useThumbnailTint";
 import { buildLibrary, sortLibrary, type LibraryItem } from "@/lib/library";
-import { preloadYouTubeIframeApi } from "@/lib/youtube-iframe-api";
+import { warmYouTubePlayer } from "@/lib/youtube-iframe-api";
 
 const MAX_SUGGESTIONS = 3;
 
 function SuggestionRow({ item }: { item: LibraryItem }) {
   const channel = useItemChannel(item);
   const tint = useThumbnailTint(item.thumbnail);
+  const warm = () => warmYouTubePlayer(item.kind === "video" ? item.id : item.resumeLesson?.id);
   return (
     <li>
       <Link
         href={item.href}
-        onPointerEnter={preloadYouTubeIframeApi}
-        onFocus={preloadYouTubeIframeApi}
+        onPointerEnter={warm}
+        onFocus={warm}
         className="group relative isolate flex gap-2 rounded-lg"
       >
         <span

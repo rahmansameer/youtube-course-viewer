@@ -111,13 +111,13 @@ export default function NotesPage() {
           return [];
         }
         shown.add(id);
-        return [{ video, href: `/course/${course.id}?lesson=${id}`, lessonNumber: index + 1 }];
+        return [{ video, href: `/course?list=${course.id}&v=${id}`, lessonNumber: index + 1 }];
       });
       if (entries.length > 0) {
         result.push({
           id: course.id,
           title: course.title,
-          href: `/course/${course.id}`,
+          href: `/course?list=${course.id}`,
           entries,
         });
       }
@@ -125,7 +125,7 @@ export default function NotesPage() {
 
     const singles = videos
       .filter((video) => video.standalone && !shown.has(video.id) && hasNotes(video))
-      .map((video) => ({ video, href: `/watch/${video.id}`, lessonNumber: null }));
+      .map((video) => ({ video, href: `/watch?v=${video.id}`, lessonNumber: null }));
     if (singles.length > 0) {
       result.push({ id: "videos", title: "Videos", href: null, entries: singles });
     }

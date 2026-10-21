@@ -185,7 +185,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
 
     // Watch pages are server-rendered shells, safe to show before hydration.
-    if (pathname.startsWith("/watch/") || pathname.startsWith("/course/")) {
+    if (pathname === "/watch" || pathname === "/course") {
       return (
         <AuthContext.Provider
           value={{ user, loading, cachedUserIdHint: storedUserIdHint, signOut }}

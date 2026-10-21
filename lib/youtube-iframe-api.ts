@@ -82,13 +82,80 @@ export function loadYouTubeIframeApi(): Promise<void> {
   return youtubeApiPromise;
 }
 
+// Hosts the embedded player talks to as it starts (the same list Google's
+// lite-youtube-embed warms). Connecting early saves the DNS/TLS setup.
+const PLAYER_ORIGINS = [
+  "https://www.youtube.com",
+  "https://www.google.com",
+  "https://googleads.g.doubleclick.net",
+  "https://static.doubleclick.net",
+];
+let warmedConnections = false;
+
+function warmPlayerConnections() {
+  if (warmedConnections) return;
+  warmedConnections = true;
+  for (const origin of PLAYER_ORIGINS) {
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = origin;
+    document.head.appendChild(link);
+  }
+}
+
 // Starts downloading the player API ahead of time (e.g. when a course card is
-// hovered) so the player can be created as soon as the watch page mounts.
-// Failures are ignored here; YouTubePlayer retries and reports them.
+// hovered) and opens connections to the player's hosts, so the player can be
+// created and start loading as soon as the watch page mounts. Failures are
+// ignored here; YouTubePlayer retries and reports them.
 export function preloadYouTubeIframeApi() {
   if (typeof window !== "undefined") {
+    warmPlayerConnections();
     loadYouTubeIframeApi().catch(() => {});
   }
+}
+
+// The embed page itself can't be cached (YouTube sends no-store), but the
+// player code it loads can. So the first hover in a browser (or once a day,
+// as YouTube ships new player code) loads one hidden, paused embed; the real
+// player that opens later finds that code already in the browser cache. The
+// moment a real player starts, the hidden one is dropped so the two never
+// compete for bandwidth.
+const WARMED_KEY = "yt-player-warmed-at";
+const WARM_AGAIN_MS = 24 * 60 * 60 * 1000;
+let warmupFrame: HTMLIFrameElement | null = null;
+let warmedPlayer = false;
+
+export function stopYouTubePlayerWarmup() {
+  warmedPlayer = true;
+  warmupFrame?.remove();
+  warmupFrame = null;
+}
+
+export function warmYouTubePlayer(videoId: string | undefined) {
+  preloadYouTubeIframeApi();
+  if (warmedPlayer || !videoId || typeof document === "undefined") return;
+  warmedPlayer = true;
+  try {
+    const last = Number(window.localStorage.getItem(WARMED_KEY));
+    if (last && Date.now() - last < WARM_AGAIN_MS) return;
+    window.localStorage.setItem(WARMED_KEY, String(Date.now()));
+  } catch {
+    // Without storage it simply warms once per visit.
+  }
+  const iframe = document.createElement("iframe");
+  iframe.src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=0&controls=0&mute=1&rel=0&playsinline=1`;
+  iframe.title = "";
+  iframe.tabIndex = -1;
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.cssText =
+    "position:fixed;left:-10000px;top:0;width:320px;height:180px;border:0;pointer-events:none;opacity:0;";
+  const remove = () => {
+    if (warmupFrame === iframe) stopYouTubePlayerWarmup();
+  };
+  iframe.addEventListener("load", () => window.setTimeout(remove, 3000), { once: true });
+  window.setTimeout(remove, 15000);
+  warmupFrame = iframe;
+  document.body.appendChild(iframe);
 }
 
 // Creates an off-screen, muted player and polls it until `read` returns a

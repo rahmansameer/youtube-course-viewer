@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import AppShell from "@/components/AppShell";
@@ -66,9 +66,16 @@ export function NotFound({ title, message }: { title: string; message: string })
   );
 }
 
+// What /watch and /course show while the page reads its address (the static
+// HTML for a direct visit): the layout with an empty player.
+export function WatchFallback() {
+  return (
+    <WatchLayout theater={false} player={<PlayerPlaceholder />} details={null} secondary={null} />
+  );
+}
+
 export default function WatchPage() {
-  const params = useParams<{ id: string }>();
-  const videoId = typeof params?.id === "string" ? params.id : "";
+  const videoId = useSearchParams().get("v") ?? "";
   const { video, loading, error, saveProgress, setCompleted, updateNotes } =
     useVideoProgress(videoId);
   // A single video opens with its notes beside it.
@@ -161,10 +168,13 @@ export default function WatchPage() {
       <WatchLayout
         theater={theater}
         player={
-          video ? (
+          // Starts from the URL's id right away, not after the saved record
+          // loads; the player seeks to the saved position once it arrives.
+          videoId ? (
             <YouTubePlayer
-              videoId={video.id}
-              currentTime={getStartTime(video)}
+              videoId={videoId}
+              currentTime={video ? getStartTime(video) : 0}
+              positionKnown={Boolean(video)}
               expanded={theater}
               onTimeUpdate={saveProgress}
               handleRef={playerHandleRef}

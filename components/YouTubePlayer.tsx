@@ -13,6 +13,7 @@ import { isTypingTarget } from "@/components/useWidePlayer";
 import { formatTime } from "@/lib/youtube";
 import {
   loadYouTubeIframeApi,
+  stopYouTubePlayerWarmup,
   type YouTubePlayerInstance,
 } from "@/lib/youtube-iframe-api";
 
@@ -28,6 +29,9 @@ type YouTubePlayerProps = {
   videoId: string;
   // Where playback starts (the saved position).
   currentTime: number;
+  // False while the saved position is still loading: the video already
+  // plays, but nothing is reported until it has moved to that position.
+  positionKnown?: boolean;
   // Theater mode: the player fills its area instead of keeping 16:9.
   expanded?: boolean;
   // Called when playback reaches the end, e.g. to open the next lesson.
@@ -47,6 +51,7 @@ type YouTubePlayerProps = {
 export default function YouTubePlayer({
   videoId,
   currentTime,
+  positionKnown = true,
   expanded = false,
   onEnded,
   handleRef,
@@ -66,6 +71,9 @@ export default function YouTubePlayer({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   currentTimeRef.current = currentTime;
+  // Set in a layout effect (not during render), so a progress tick can't
+  // slip in between learning the position and seeking to it.
+  const positionKnownRef = useRef(positionKnown);
 
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
@@ -77,7 +85,7 @@ export default function YouTubePlayer({
 
   const flushProgress = useCallback((forcePersist = false) => {
     const player = playerRef.current;
-    if (!readyRef.current || !player?.getCurrentTime) {
+    if (!readyRef.current || !positionKnownRef.current || !player?.getCurrentTime) {
       return;
     }
 
@@ -126,6 +134,7 @@ export default function YouTubePlayer({
     // Create the embed during commit, before paint, with autoplay and the
     // saved start second in its URL, so YouTube starts loading right away;
     // YT.Player attaches to this iframe once the API is ready.
+    stopYouTubePlayerWarmup();
     const iframe = document.createElement("iframe");
     const startSecond = Math.floor(Math.max(0, currentTimeRef.current));
     const embedParams = new URLSearchParams({
@@ -137,7 +146,14 @@ export default function YouTubePlayer({
       origin: window.location.origin,
     });
     iframe.src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?${embedParams}`;
-    iframe.title = "YouTube video player";
+    // A title would show as a tooltip beside the cursor over the video, and
+    // the YouTube API sets one (the video's name) once it attaches, so the
+    // name goes in aria-label and any title is taken off again.
+    iframe.setAttribute("aria-label", "YouTube video player");
+    const titleObserver = new MutationObserver(() => {
+      if (iframe.hasAttribute("title")) iframe.removeAttribute("title");
+    });
+    titleObserver.observe(iframe, { attributes: true, attributeFilter: ["title"] });
     iframe.allow =
       "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
@@ -158,6 +174,8 @@ export default function YouTubePlayer({
                 return;
               }
               readyRef.current = true;
+              // Not known yet: the effect below seeks once it is.
+              if (!positionKnownRef.current) return;
               // The saved position may have changed while the embed loaded
               // (e.g. newer progress from Supabase).
               const savedTime = Math.max(0, currentTimeRef.current);
@@ -197,9 +215,22 @@ export default function YouTubePlayer({
       playerRef.current?.destroy?.();
       playerRef.current = null;
       iframeRef.current = null;
+      titleObserver.disconnect();
       iframe.remove();
     };
   }, [videoId, flushProgress]);
+
+  // The saved position arrived after the video started: jump there (unless
+  // the player isn't ready yet; then onReady does it).
+  useLayoutEffect(() => {
+    const wasKnown = positionKnownRef.current;
+    positionKnownRef.current = positionKnown;
+    if (!positionKnown || wasKnown || !readyRef.current) return;
+    const savedTime = Math.max(0, currentTimeRef.current);
+    if (savedTime > 2) {
+      playerRef.current?.seekTo?.(savedTime, true);
+    }
+  }, [positionKnown]);
 
   const showBadge = useCallback((text: string, sticky = false) => {
     setBadge(text);
