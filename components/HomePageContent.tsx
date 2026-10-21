@@ -394,7 +394,7 @@ function HomePageContent() {
             : item.id,
         ).filter(Boolean),
       );
-    }, 1000);
+    }, 300);
     return () => window.clearTimeout(timeout);
   }, [library, loading]);
   const normalizedQuery = query.trim().toLowerCase();

@@ -35,14 +35,18 @@ export function Logo() {
 
 const SHORTCUTS: [string, string][] = [
   ["Space / K", "Play or pause"],
+  ["Hold Space", "Play at 2x while held"],
   ["J / L", "Back or forward 10 seconds"],
   ["← / →", "Back or forward 5 seconds"],
+  ["↑ / ↓", "Volume up or down"],
   ["M", "Mute or unmute"],
+  ["F", "Full screen"],
+  ["T", "Theater mode"],
+  ["0–9", "Jump to 0%–90% of the video"],
+  ["Home / End", "Start or end of the video"],
+  ["Shift + . / ,", "Faster or slower"],
   ["Shift + N", "Next lesson"],
   ["Shift + P", "Previous lesson"],
-  ["Shift + . / ,", "Faster or slower"],
-  ["T", "Theater mode"],
-  ["F", "Fullscreen"],
   ["?", "Show keyboard shortcuts"],
 ];
 

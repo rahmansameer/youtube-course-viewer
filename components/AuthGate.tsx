@@ -16,7 +16,7 @@ import type { User } from "@supabase/auth-js";
 import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
 import { HomeThemeProvider } from "@/components/HomeTheme";
-import { Button, Toaster, inputClasses } from "@/components/ui";
+import { Button, inputClasses } from "@/components/ui";
 import {
   readAuthSessionHint,
   setAuthSessionHint,

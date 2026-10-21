@@ -153,9 +153,7 @@ export default function WatchPage() {
             <YouTubePlayer
               videoId={video.id}
               currentTime={getStartTime(video)}
-              savedDuration={video.duration}
               expanded={isWidePlayer}
-              onToggleExpanded={toggleWidePlayer}
               onTimeUpdate={saveProgress}
               handleRef={playerHandleRef}
             />
@@ -185,6 +183,11 @@ export default function WatchPage() {
                   </Button>
                   <Menu
                     items={[
+                      {
+                        label: isWidePlayer ? "Default view (t)" : "Theater mode (t)",
+                        icon: "theater",
+                        onSelect: toggleWidePlayer,
+                      },
                       { label: "Open on YouTube", icon: "openInNew", href: youtubeUrl, external: true },
                     ]}
                     trigger={(props) => (

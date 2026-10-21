@@ -4,18 +4,18 @@ export type YouTubePlayerInstance = {
   destroy?: () => void;
   getCurrentTime?: () => number;
   getDuration?: () => number;
-  getIframe?: () => HTMLIFrameElement;
   getPlaybackRate?: () => number;
-  getPlaylist?: () => string[] | null;
   getPlayerState?: () => number;
+  getPlaylist?: () => string[] | null;
+  getVolume?: () => number;
   isMuted?: () => boolean;
   mute?: () => void;
   pauseVideo?: () => void;
   playVideo?: () => void;
   seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
   setPlaybackRate?: (rate: number) => void;
+  setVolume?: (volume: number) => void;
   unMute?: () => void;
-  unloadModule?: (module: string) => void;
 };
 
 type YouTubePlayerOptions = {
@@ -30,11 +30,6 @@ type YouTubePlayerOptions = {
       target: YouTubePlayerInstance;
     }) => void;
     onError?: (event: { data: number }) => void;
-    onApiChange?: (event: { target: YouTubePlayerInstance }) => void;
-    onPlaybackRateChange?: (event: {
-      data: number;
-      target: YouTubePlayerInstance;
-    }) => void;
   };
 };
 

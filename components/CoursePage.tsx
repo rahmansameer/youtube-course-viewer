@@ -550,14 +550,9 @@ export default function CoursePage() {
               key={lesson.id}
               videoId={lesson.id}
               currentTime={getStartTime(lesson)}
-              savedDuration={lesson.duration}
               expanded={isWidePlayer}
-              onToggleExpanded={toggleWidePlayer}
               onEnded={handleEnded}
               onTimeUpdate={saveProgress}
-              onNext={nextLesson ? () => goToLesson(nextLesson.id) : undefined}
-              onPrevious={previousLesson ? () => goToLesson(previousLesson.id) : undefined}
-              autoplay={{ enabled: autoplayNext, onChange: toggleAutoplay }}
               handleRef={playerHandleRef}
             />
           ) : (
@@ -590,6 +585,17 @@ export default function CoursePage() {
                   </Button>
                   <Menu
                     items={[
+                      {
+                        label: "Autoplay next lesson",
+                        checked: autoplayNext,
+                        onSelect: () => toggleAutoplay(!autoplayNext),
+                      },
+                      "divider",
+                      {
+                        label: isWidePlayer ? "Default view (t)" : "Theater mode (t)",
+                        icon: "theater",
+                        onSelect: toggleWidePlayer,
+                      },
                       ...courseMenuItems,
                       {
                         label: "Open lesson on YouTube",

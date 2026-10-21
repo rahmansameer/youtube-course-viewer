@@ -1,8 +1,12 @@
 // The app was renamed from "course-viewer" to "youtube-course-viewer". This
 // runs before first paint (see app/layout.tsx) and moves saved browser data
 // (theme, progress, cached library, session hint) to the new names before
-// anything reads it.
+// anything reads it. It also drops settings no code reads any more, such as
+// the old custom player's speed.
 export const STORAGE_MIGRATION_SCRIPT = `try {
+  ["playback-rate", "notes-open", "notes-open-v2", "channel-avatars", "descriptions-v1"].forEach(function (name) {
+    localStorage.removeItem("youtube-course-viewer-" + name);
+  });
   var oldPrefix = "course-viewer-";
   var newPrefix = "youtube-course-viewer-";
   [localStorage, sessionStorage].forEach(function (store) {

@@ -119,17 +119,6 @@ export function formatDuration(seconds: number | null | undefined): string {
   return formatTime(seconds);
 }
 
-export function getProgressPercent(
-  currentTime: number,
-  duration: number | null,
-): number {
-  if (!duration || duration <= 0) {
-    return 0;
-  }
-
-  return Math.min(100, Math.max(0, (currentTime / duration) * 100));
-}
-
 // "3h 20m", "45m", "30s": for totals and time left, where seconds are noise.
 export function formatDurationLong(seconds: number | null | undefined): string {
   if (!seconds || !Number.isFinite(seconds) || seconds <= 0) {

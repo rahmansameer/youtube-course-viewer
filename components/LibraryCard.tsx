@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useSyncExternalStore } from "react";
 
 import Icon from "@/components/Icon";
 import { DurationBadge, IconButton, Menu, ResumeBar, type MenuItem } from "@/components/ui";
 import { type LibraryItem } from "@/lib/library";
 import { formatDuration } from "@/lib/youtube";
 import { preloadYouTubeIframeApi } from "@/lib/youtube-iframe-api";
+import { getCachedChannelName, subscribeToChannels } from "@/lib/youtube-metadata";
 
 export type LibraryCardAction = "edit" | "complete" | "reset" | "delete";
 
@@ -105,6 +107,14 @@ export default function LibraryCard({
   eagerThumbnail = false,
   onAction,
 }: LibraryCardProps) {
+  // Playlists know their channel; a single video's channel is looked up in
+  // the background and fills in when it arrives.
+  const cachedChannel = useSyncExternalStore(
+    subscribeToChannels,
+    () => (item.kind === "video" ? getCachedChannelName(item.id) : ""),
+    () => "",
+  );
+  const channel = item.channel || cachedChannel;
   return (
     <article className="group relative flex min-w-0 flex-col">
       <Link
@@ -124,7 +134,7 @@ export default function LibraryCard({
             </h3>
           </Link>
           <p className="mt-1 truncate text-sm text-fg-muted">
-            {item.channel || (item.kind === "playlist" ? "Playlist course" : "Single video")}
+            {channel || "\u00a0"}
           </p>
         </div>
         <Menu

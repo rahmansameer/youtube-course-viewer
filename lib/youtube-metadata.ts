@@ -76,6 +76,20 @@ function readChannelCache(): ChannelCache {
   return channelCache;
 }
 
+const channelListeners = new Set<() => void>();
+
+// Lets cards re-render when a channel name arrives in the background.
+export function subscribeToChannels(listener: () => void) {
+  channelListeners.add(listener);
+  return () => {
+    channelListeners.delete(listener);
+  };
+}
+
+export function getCachedChannelName(videoId: string): string {
+  return readChannelCache().videos[videoId]?.name ?? "";
+}
+
 function writeChannelCache(update: (cache: ChannelCache) => void) {
   const cache = readChannelCache();
   update(cache);
@@ -83,6 +97,9 @@ function writeChannelCache(update: (cache: ChannelCache) => void) {
     window.localStorage.setItem(CHANNEL_CACHE_KEY, JSON.stringify(cache));
   } catch {
     // Kept in memory for this visit.
+  }
+  for (const listener of channelListeners) {
+    listener();
   }
 }
 
@@ -139,15 +156,23 @@ export async function fetchVideoChannel(videoId: string): Promise<ChannelInfo | 
 // Looks channels up in the background (from the home page) so watch pages
 // open with them already known.
 let prefetching = false;
+let queuedIds: string[] | null = null;
 export async function prefetchVideoChannels(videoIds: string[]) {
+  // A call while one is running is queued, so newly added videos aren't missed.
   if (prefetching) {
+    queuedIds = videoIds;
     return;
   }
   prefetching = true;
   try {
-    const missing = videoIds.filter((id) => !getCachedVideoChannel(id)?.avatar);
-    for (const id of missing.slice(0, 40)) {
-      await fetchVideoChannel(id);
+    let ids: string[] | null = videoIds;
+    while (ids) {
+      queuedIds = null;
+      const missing = ids.filter((id) => !getCachedVideoChannel(id)?.avatar);
+      for (const id of missing.slice(0, 40)) {
+        await fetchVideoChannel(id);
+      }
+      ids = queuedIds;
     }
   } finally {
     prefetching = false;
