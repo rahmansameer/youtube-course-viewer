@@ -95,8 +95,9 @@ function stop(event: { stopPropagation: () => void }) {
   event.stopPropagation();
 }
 
+// 18px tall in a 22px line, so chips on neighboring lines keep a small gap.
 const chipClass =
-  "mx-0.5 inline-flex max-w-full items-baseline gap-1.5 rounded-full bg-chip-hover/60 px-2 align-baseline text-fg no-underline transition-colors hover:bg-chip-hover";
+  "mx-0.5 inline-flex h-[18px] max-w-full items-center gap-1.5 rounded-full bg-chip-hover/60 px-2 align-middle text-[13px] leading-none text-fg no-underline transition-colors hover:bg-chip-hover";
 
 function Favicon({ host }: { host: string }) {
   return (
@@ -105,7 +106,7 @@ function Favicon({ host }: { host: string }) {
       alt=""
       width={14}
       height={14}
-      className="relative top-[2px] inline h-3.5 w-3.5 shrink-0 rounded-sm"
+      className="inline h-3.5 w-3.5 shrink-0 rounded-sm"
     />
   );
 }
@@ -150,7 +151,7 @@ function LinkView({ link }: { link: Link }) {
             <img
               src={`https://i.ytimg.com/vi/${link.videoId}/default.jpg`}
               alt=""
-              className="relative top-[3px] inline h-4 w-6 shrink-0 rounded-sm object-cover"
+              className="inline h-3 w-[18px] shrink-0 rounded-sm object-cover"
             />
           ) : (
             <Favicon host="youtube.com" />

@@ -97,7 +97,9 @@ function timeAgo(date: Date) {
   return "just now";
 }
 
-const LINE_PX = 20;
+// The description's line height (leading-[22px] below): a little taller than
+// body text so link chips on neighboring lines don't touch.
+const LINE_PX = 22;
 // The box's bottom padding (p-3), so its edge lines up, not its text.
 const BOX_PADDING_PX = 12;
 
@@ -159,7 +161,7 @@ function DescriptionBox({
 
   return (
     <div
-      className={`group mt-3 rounded-xl bg-surface p-3 text-sm leading-5 ${
+      className={`group mt-3 rounded-xl bg-surface p-3 text-sm leading-[22px] ${
         expanded ? "" : "cursor-pointer hover:bg-surface-hover"
       }`}
       onClick={() => {
