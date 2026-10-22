@@ -562,6 +562,7 @@ export default function CoursePage() {
               videoId={lesson.id}
               currentTime={getStartTime(lesson)}
               expanded={isWidePlayer}
+              onToggleTheater={toggleWidePlayer}
               onEnded={handleEnded}
               onTimeUpdate={saveProgress}
               handleRef={playerHandleRef}
@@ -604,7 +605,7 @@ export default function CoursePage() {
                       "divider",
                       {
                         label: isWidePlayer ? "Default view (t)" : "Theater mode (t)",
-                        icon: "theater",
+                        icon: "expand",
                         onSelect: toggleWidePlayer,
                       },
                       ...courseMenuItems,

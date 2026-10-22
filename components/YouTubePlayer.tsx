@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from "react";
 
+import PlayerControls from "@/components/PlayerControls";
 import { isTypingTarget } from "@/components/useWidePlayer";
 import {
   loadYouTubeIframeApi,
@@ -22,6 +23,8 @@ const HOLD_DELAY_MS = 350;
 // Extra player height above and below the video, cut off by the frame: it
 // hides YouTube's title bar on top and the "More videos" strip on pause.
 const CROP_PX = 72;
+// How long the controls stay after the pointer stops moving over the video.
+const CONTROLS_IDLE_MS = 2500;
 
 export type PlayerHandle = {
   seekTo: (seconds: number) => void;
@@ -36,6 +39,8 @@ type YouTubePlayerProps = {
   positionKnown?: boolean;
   // Theater mode: the player fills its area instead of keeping 16:9.
   expanded?: boolean;
+  // Shows a theater mode button in the controls.
+  onToggleTheater?: () => void;
   // Called when playback reaches the end, e.g. to open the next lesson.
   onEnded?: () => void;
   // Lets the page seek the video, e.g. from a timestamp in the notes.
@@ -47,14 +52,16 @@ type YouTubePlayerProps = {
   ) => void;
 };
 
-// YouTube's own embedded player, with its built-in controls. The IFrame API
-// saves progress, notices the end of a video, seeks, and powers youtube.com's
-// keyboard shortcuts on the page (see the keydown handler below).
+// YouTube's embedded player with its own UI hidden and a minimal control bar
+// of ours on top. The IFrame API saves progress, notices the end of a video,
+// seeks, and powers youtube.com's keyboard shortcuts on the page (see the
+// keydown handler below).
 export default function YouTubePlayer({
   videoId,
   currentTime,
   positionKnown = true,
   expanded = false,
+  onToggleTheater,
   onEnded,
   handleRef,
   onTimeUpdate,
@@ -67,6 +74,10 @@ export default function YouTubePlayer({
   const onEndedRef = useRef(onEnded);
   const currentTimeRef = useRef(currentTime);
   const [playerError, setPlayerError] = useState("");
+  const [playing, setPlaying] = useState(false);
+  // The pointer moved over the video lately, so the controls show.
+  const [pointerActive, setPointerActive] = useState(false);
+  const idleTimeoutRef = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   currentTimeRef.current = currentTime;
   // Set in a layout effect (not during render), so a progress tick can't
@@ -126,6 +137,7 @@ export default function YouTubePlayer({
 
     let cancelled = false;
     setPlayerError("");
+    setPlaying(false);
     readyRef.current = false;
     lastReportedSecondRef.current = -1;
 
@@ -162,11 +174,14 @@ export default function YouTubePlayer({
     iframe.allow =
       "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
-    // Centered at the video's 16:9 size plus CROP_PX above and below; being
-    // taller than 16:9, the video fills its width and the extra is cut off.
+    // Centered, no wider than the 16:9 video and CROP_PX taller than the
+    // frame at both ends. Being taller than 16:9, YouTube fits the video to
+    // its width, and its UI at the iframe's top and bottom edges is cut off,
+    // even when the frame (theater mode in a tall window) is taller than the
+    // video.
     iframe.className = "absolute top-1/2 left-1/2 block -translate-1/2 border-0";
     iframe.style.width = "min(100cqw, 100cqh * 16 / 9)";
-    iframe.style.height = `calc(min(100cqw, 100cqh * 16 / 9) * 9 / 16 + ${CROP_PX * 2}px)`;
+    iframe.style.height = `calc(100cqh + ${CROP_PX * 2}px)`;
     container.appendChild(iframe);
 
     void loadYouTubeIframeApi()
@@ -192,6 +207,9 @@ export default function YouTubePlayer({
             },
             onStateChange: (event) => {
               const states = window.YT?.PlayerState;
+              if (!cancelled && event.data !== states?.BUFFERING) {
+                setPlaying(event.data === states?.PLAYING);
+              }
               if (event.data === states?.PAUSED || event.data === states?.ENDED) {
                 flushProgress(true);
               }
@@ -237,6 +255,39 @@ export default function YouTubePlayer({
       playerRef.current?.seekTo?.(savedTime, true);
     }
   }, [positionKnown]);
+
+  const getReadyPlayer = useCallback(
+    () => (readyRef.current ? playerRef.current : null),
+    [],
+  );
+
+  // From the progress bar: follow the drag, then save the new position.
+  const seekFromControls = useCallback(
+    (seconds: number, done: boolean) => {
+      const player = getReadyPlayer();
+      if (!player?.seekTo) return;
+      player.seekTo(Math.max(0, seconds), done);
+      if (done) {
+        lastReportedSecondRef.current = -1;
+        flushProgress(true);
+      }
+    },
+    [flushProgress, getReadyPlayer],
+  );
+
+  const showControlsForAWhile = useCallback(() => {
+    setPointerActive(true);
+    if (idleTimeoutRef.current !== null) window.clearTimeout(idleTimeoutRef.current);
+    idleTimeoutRef.current = window.setTimeout(() => setPointerActive(false), CONTROLS_IDLE_MS);
+  }, []);
+
+  const hideControls = useCallback(() => {
+    if (idleTimeoutRef.current !== null) window.clearTimeout(idleTimeoutRef.current);
+    idleTimeoutRef.current = null;
+    setPointerActive(false);
+  }, []);
+
+  useEffect(() => hideControls, [hideControls]);
 
   const togglePlay = useCallback(() => {
     const target = readyRef.current ? playerRef.current : null;
@@ -404,6 +455,8 @@ export default function YouTubePlayer({
       className={`relative overflow-hidden bg-black outline-none ${
         expanded ? "h-full" : "aspect-video rounded-xl"
       }`}
+      onPointerMove={showControlsForAWhile}
+      onPointerLeave={hideControls}
     >
       <div ref={containerRef} className="absolute inset-0 [container-type:size]" />
       {/* Takes every click and hover, so YouTube never shows its controls;
@@ -411,9 +464,21 @@ export default function YouTubePlayer({
           the browser window instead. */}
       <div
         aria-hidden
-        className="absolute inset-0"
+        // The pointer hides with the controls while the video plays.
+        className={`absolute inset-0 ${playing && !pointerActive ? "cursor-none" : ""}`}
         onClick={togglePlay}
       />
+      {playerError ? null : (
+        <PlayerControls
+          getPlayer={getReadyPlayer}
+          playing={playing}
+          visible={pointerActive || !playing}
+          expanded={expanded}
+          onTogglePlay={togglePlay}
+          onSeek={seekFromControls}
+          onToggleTheater={onToggleTheater}
+        />
+      )}
       {playerError ? (
         <p
           role="alert"

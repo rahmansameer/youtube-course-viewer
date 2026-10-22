@@ -13,14 +13,13 @@ export function isTypingTarget(target: EventTarget | null) {
   );
 }
 
-// Theater mode: the player spans the full width. T toggles it, and the
-// choice is remembered like on YouTube.
-// `onToggleKey` lets a page decide what T does (the single-video page also
-// opens its notes when leaving theater mode).
-export function useWidePlayer(onToggleKey?: () => void) {
+// Theater mode: the player fills the whole window, with nothing else on
+// screen. T toggles it, Esc leaves it, and the choice is remembered like on
+// YouTube.
+export function useWidePlayer() {
   const [isWidePlayer, setIsWidePlayer] = useState(false);
-  const onToggleKeyRef = useRef(onToggleKey);
-  onToggleKeyRef.current = onToggleKey;
+  const isWideRef = useRef(isWidePlayer);
+  isWideRef.current = isWidePlayer;
 
   // Read before paint; the page is server-rendered without it.
   useLayoutEffect(() => {
@@ -44,8 +43,9 @@ export function useWidePlayer(onToggleKey?: () => void) {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
       if (
-        event.key.toLowerCase() !== "t" ||
+        (key !== "t" && !(key === "escape" && isWideRef.current)) ||
         event.repeat ||
         event.altKey ||
         event.ctrlKey ||
@@ -56,7 +56,7 @@ export function useWidePlayer(onToggleKey?: () => void) {
       }
 
       event.preventDefault();
-      (onToggleKeyRef.current ?? toggleWidePlayer)();
+      toggleWidePlayer();
     };
 
     window.addEventListener("keydown", handleKeyDown);

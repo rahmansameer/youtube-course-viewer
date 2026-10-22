@@ -80,18 +80,7 @@ export default function WatchPage() {
     useVideoProgress(videoId);
   // A single video opens with its notes beside it.
   const [notesOpen, setNotesOpen] = useState(true);
-  // With notes closed nothing sits beside the player, so it widens into
-  // theater mode on its own (without changing the saved theater choice).
-  const toggleTheater = () => {
-    if (isWidePlayer || !notesOpen) {
-      if (isWidePlayer) toggleWidePlayer();
-      setNotesOpen(true);
-    } else {
-      toggleWidePlayer();
-    }
-  };
-  const { isWidePlayer, toggleWidePlayer } = useWidePlayer(() => toggleTheater());
-  const theater = isWidePlayer || !notesOpen;
+  const { isWidePlayer: theater, toggleWidePlayer: toggleTheater } = useWidePlayer();
   const [channel, setChannel] = useState<ChannelInfo | null>(null);
   const [youtubeDescription, setYoutubeDescription] = useState<VideoAbout | null>(null);
   const playerHandleRef = useRef<PlayerHandle | null>(null);
@@ -176,6 +165,7 @@ export default function WatchPage() {
               currentTime={video ? getStartTime(video) : 0}
               positionKnown={Boolean(video)}
               expanded={theater}
+              onToggleTheater={toggleTheater}
               onTimeUpdate={saveProgress}
               handleRef={playerHandleRef}
             />
@@ -207,7 +197,7 @@ export default function WatchPage() {
                     items={[
                       {
                         label: theater ? "Default view (t)" : "Theater mode (t)",
-                        icon: "theater",
+                        icon: "expand",
                         onSelect: toggleTheater,
                       },
                       { label: "Open on YouTube", icon: "openInNew", href: youtubeUrl, external: true },
@@ -232,7 +222,7 @@ export default function WatchPage() {
                 onChange={updateNotes}
                 onSeek={(seconds) => playerHandleRef.current?.seekTo(seconds)}
                 onClose={toggleNotes}
-                fillHeight={!theater}
+                fillHeight
               />
             ) : null}
             {video && !theater ? (

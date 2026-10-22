@@ -7,6 +7,7 @@ export type YouTubePlayerInstance = {
   getPlaybackRate?: () => number;
   getPlayerState?: () => number;
   getPlaylist?: () => string[] | null;
+  getVideoLoadedFraction?: () => number;
   getVolume?: () => number;
   isMuted?: () => boolean;
   mute?: () => void;
