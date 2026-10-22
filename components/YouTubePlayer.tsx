@@ -10,7 +10,6 @@ import {
 } from "react";
 
 import { isTypingTarget } from "@/components/useWidePlayer";
-import { formatTime } from "@/lib/youtube";
 import {
   loadYouTubeIframeApi,
   stopYouTubePlayerWarmup,
@@ -20,6 +19,9 @@ import {
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // How long Space must be held before it means "2x while held".
 const HOLD_DELAY_MS = 350;
+// Extra player height above and below the video, cut off by the frame: it
+// hides YouTube's title bar on top and the "More videos" strip on pause.
+const CROP_PX = 72;
 
 export type PlayerHandle = {
   seekTo: (seconds: number) => void;
@@ -65,11 +67,7 @@ export default function YouTubePlayer({
   const onEndedRef = useRef(onEnded);
   const currentTimeRef = useRef(currentTime);
   const [playerError, setPlayerError] = useState("");
-  // A short note over the video after a shortcut, like "+10s" or "2x".
-  const [badge, setBadge] = useState<string | null>(null);
-  const badgeTimeoutRef = useRef<number | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   currentTimeRef.current = currentTime;
   // Set in a layout effect (not during render), so a progress tick can't
   // slip in between learning the position and seeking to it.
@@ -140,6 +138,13 @@ export default function YouTubePlayer({
     const embedParams = new URLSearchParams({
       autoplay: "1",
       start: String(startSecond),
+      // As little of YouTube's own UI as the embed allows: no control bar,
+      // fullscreen button, keyboard handling (the page has its own) or
+      // annotations.
+      controls: "0",
+      fs: "0",
+      disablekb: "1",
+      iv_load_policy: "3",
       rel: "0",
       playsinline: "1",
       enablejsapi: "1",
@@ -157,10 +162,12 @@ export default function YouTubePlayer({
     iframe.allow =
       "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
-    iframe.allowFullscreen = true;
-    iframe.className = "block h-full w-full border-0";
+    // Centered at the video's 16:9 size plus CROP_PX above and below; being
+    // taller than 16:9, the video fills its width and the extra is cut off.
+    iframe.className = "absolute top-1/2 left-1/2 block -translate-1/2 border-0";
+    iframe.style.width = "min(100cqw, 100cqh * 16 / 9)";
+    iframe.style.height = `calc(min(100cqw, 100cqh * 16 / 9) * 9 / 16 + ${CROP_PX * 2}px)`;
     container.appendChild(iframe);
-    iframeRef.current = iframe;
 
     void loadYouTubeIframeApi()
       .then(() => {
@@ -214,7 +221,6 @@ export default function YouTubePlayer({
       readyRef.current = false;
       playerRef.current?.destroy?.();
       playerRef.current = null;
-      iframeRef.current = null;
       titleObserver.disconnect();
       iframe.remove();
     };
@@ -232,38 +238,25 @@ export default function YouTubePlayer({
     }
   }, [positionKnown]);
 
-  const showBadge = useCallback((text: string, sticky = false) => {
-    setBadge(text);
-    if (badgeTimeoutRef.current !== null) {
-      window.clearTimeout(badgeTimeoutRef.current);
-      badgeTimeoutRef.current = null;
-    }
-    if (!sticky) {
-      badgeTimeoutRef.current = window.setTimeout(() => setBadge(null), 800);
+  const togglePlay = useCallback(() => {
+    const target = readyRef.current ? playerRef.current : null;
+    if (!target) return;
+    const playing = target.getPlayerState?.() === window.YT?.PlayerState?.PLAYING;
+    if (playing) {
+      target.pauseVideo?.();
+    } else {
+      target.playVideo?.();
     }
   }, []);
 
-  // youtube.com's keyboard shortcuts. Clicks on the video give focus to the
-  // cross-origin iframe, where the page can't hear keys, so focus is handed
-  // back to the page right after; YouTube's controls still get the click.
+  // youtube.com's keyboard shortcuts, heard on the page: a layer over the
+  // video takes the clicks, so focus never moves into the iframe. Nothing is
+  // drawn over the video for them; the video itself is the feedback.
   useEffect(() => {
     let holdTimeout: number | null = null;
     let boosted = false;
     let rateBeforeBoost = 1;
     const player = () => (readyRef.current ? playerRef.current : null);
-
-    const togglePlay = () => {
-      const target = player();
-      if (!target) return;
-      const playing = target.getPlayerState?.() === window.YT?.PlayerState?.PLAYING;
-      // No badge here: the video stopping or moving is feedback enough, and
-      // a note on every play/pause would distract.
-      if (playing) {
-        target.pauseVideo?.();
-      } else {
-        target.playVideo?.();
-      }
-    };
 
     const seekBy = (seconds: number) => {
       const target = player();
@@ -272,7 +265,6 @@ export default function YouTubePlayer({
       const next = Math.max(0, target.getCurrentTime() + seconds);
       target.seekTo(duration > 0 ? Math.min(duration, next) : next, true);
       lastReportedSecondRef.current = -1;
-      showBadge(`${seconds > 0 ? "+" : "−"}${Math.abs(seconds)}s`);
     };
 
     const seekToFraction = (fraction: number) => {
@@ -281,7 +273,6 @@ export default function YouTubePlayer({
       if (!target?.seekTo || duration <= 0) return;
       target.seekTo(duration * fraction, true);
       lastReportedSecondRef.current = -1;
-      showBadge(formatTime(duration * fraction));
     };
 
     const changeVolume = (delta: number) => {
@@ -290,7 +281,6 @@ export default function YouTubePlayer({
       if (target.isMuted?.()) target.unMute?.();
       const volume = Math.min(100, Math.max(0, (target.getVolume?.() ?? 100) + delta));
       target.setVolume(volume);
-      showBadge(`Volume ${volume}%`);
     };
 
     const stepRate = (direction: 1 | -1) => {
@@ -303,17 +293,6 @@ export default function YouTubePlayer({
           Math.min(PLAYBACK_RATES.length - 1, Math.max(0, (index === -1 ? 3 : index) + direction))
         ];
       target.setPlaybackRate(next);
-      showBadge(`${next}x`);
-    };
-
-    const toggleFullscreen = () => {
-      const iframe = iframeRef.current;
-      if (!iframe) return;
-      if (document.fullscreenElement) {
-        void document.exitFullscreen().catch(() => {});
-      } else {
-        void iframe.requestFullscreen().catch(() => {});
-      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -335,7 +314,6 @@ export default function YouTubePlayer({
             target.setPlaybackRate(2);
             target.playVideo?.();
             boosted = true;
-            showBadge("2x ▶▶", true);
           }, HOLD_DELAY_MS);
         }
         return;
@@ -356,13 +334,10 @@ export default function YouTubePlayer({
         const target = player();
         if (target?.isMuted?.()) {
           target.unMute?.();
-          showBadge("Unmuted");
         } else {
           target?.mute?.();
-          showBadge("Muted");
         }
-      } else if (lower === "f") toggleFullscreen();
-      else if (key === ">") stepRate(1);
+      } else if (key === ">") stepRate(1);
       else if (key === "<") stepRate(-1);
       else if (key === "Home") seekToFraction(0);
       else if (key === "End") seekToFraction(0.999);
@@ -386,35 +361,19 @@ export default function YouTubePlayer({
       } else if (boosted) {
         boosted = false;
         player()?.setPlaybackRate?.(rateBeforeBoost);
-        setBadge(null);
       }
-    };
-
-    // After a click on the video, take focus back so the keys above keep
-    // working (YouTube's own controls have already handled the click).
-    const reclaimFocus = () => {
-      window.setTimeout(() => {
-        if (document.activeElement === iframeRef.current) {
-          shellRef.current?.focus({ preventScroll: true });
-        }
-      }, 0);
     };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", reclaimFocus);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", reclaimFocus);
       if (holdTimeout !== null) {
         window.clearTimeout(holdTimeout);
       }
-      if (badgeTimeoutRef.current !== null) {
-        window.clearTimeout(badgeTimeoutRef.current);
-      }
     };
-  }, [showBadge]);
+  }, [togglePlay]);
 
   // Save progress every second, and when the tab is hidden or closed.
   useEffect(() => {
@@ -446,15 +405,15 @@ export default function YouTubePlayer({
         expanded ? "h-full" : "aspect-video rounded-xl"
       }`}
     >
-      <div ref={containerRef} className="h-full w-full" />
-      {badge ? (
-        <span
-          aria-live="polite"
-          className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-4 py-1.5 text-sm font-medium text-white"
-        >
-          {badge}
-        </span>
-      ) : null}
+      <div ref={containerRef} className="absolute inset-0 [container-type:size]" />
+      {/* Takes every click and hover, so YouTube never shows its controls;
+          a click plays or pauses. There's no fullscreen: theater mode fills
+          the browser window instead. */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        onClick={togglePlay}
+      />
       {playerError ? (
         <p
           role="alert"

@@ -40,7 +40,6 @@ const SHORTCUTS: [string, string][] = [
   ["← / →", "Back or forward 5 seconds"],
   ["↑ / ↓", "Volume up or down"],
   ["M", "Mute or unmute"],
-  ["F", "Full screen"],
   ["T", "Theater mode"],
   ["0–9", "Jump to 0%–90% of the video"],
   ["Home / End", "Start or end of the video"],

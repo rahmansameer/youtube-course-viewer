@@ -209,7 +209,9 @@ html[data-theme="dark"] .card-tint {
 }
 
 .watch-grid[data-theater] > .watch-player {
-  height: min(56.25vw, calc(100dvh - 169px));
+  /* The whole window below the masthead (56px); the video keeps its shape
+     inside with black bars, like full screen without leaving the browser. */
+  height: calc(100dvh - 56px);
   min-height: 240px;
   margin: 0 -16px;
   padding-top: 0;
