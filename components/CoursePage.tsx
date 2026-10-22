@@ -526,7 +526,17 @@ export default function CoursePage() {
     }
   };
 
-  const toggleNotes = () => setNotesOpen((open) => !open);
+  // Open notes take the lesson list's place at the list's size, measured
+  // just before it hides.
+  const lessonListRef = useRef<HTMLDivElement | null>(null);
+  const [notesHeight, setNotesHeight] = useState<number | null>(null);
+  const toggleNotes = () => {
+    if (!notesOpen) {
+      const list = lessonListRef.current?.firstElementChild;
+      setNotesHeight(list ? Math.round(list.getBoundingClientRect().height) || null : null);
+    }
+    setNotesOpen((open) => !open);
+  };
 
   if (!course && !loading) {
     return (
@@ -636,13 +646,13 @@ export default function CoursePage() {
                 onChange={updateNotes}
                 onSeek={(seconds) => playerHandleRef.current?.seekTo(seconds)}
                 onClose={toggleNotes}
-                fillHeight
+                height={notesHeight}
               />
             ) : null}
             {/* Notes take the lesson list's place while open; the list stays
                 mounted (hidden) so its scroll and filter are kept. */}
             {course ? (
-              <div className={lesson && notesOpen ? "hidden" : "contents"}>
+              <div ref={lessonListRef} className={lesson && notesOpen ? "hidden" : "contents"}>
                 <LessonList
                   title={course.title}
                   channel={course.channel}
