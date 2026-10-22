@@ -17,6 +17,7 @@ import { formatDuration } from "@/lib/youtube";
 
 type LessonListProps = {
   title: string;
+  // Shown under each lesson that isn't completed.
   channel: string;
   lessons: VideoRecord[];
   currentLessonId: string | null;
@@ -48,7 +49,6 @@ export default function LessonList({
 }: LessonListProps) {
   const [hideCompleted, setHideCompleted] = useState(false);
   const listRef = useRef<HTMLOListElement | null>(null);
-  const currentIndex = lessons.findIndex((lesson) => lesson.id === currentLessonId);
   const visibleLessons = lessons
     .map((lesson, index) => ({ lesson, index }))
     .filter(({ lesson }) => !hideCompleted || !lesson.completed || lesson.id === currentLessonId);
@@ -73,10 +73,6 @@ export default function LessonList({
     >
       <header className="relative border-b border-line bg-chip py-3 pr-12 pl-4">
         <h2 className="line-clamp-2 text-xl leading-7 font-bold">{title}</h2>
-        <p className="mt-1 text-xs text-fg-muted">
-          {channel ? `${channel} – ` : ""}
-          {currentIndex + 1} / {lessons.length}
-        </p>
         <div className="mt-3 flex items-center gap-3">
           <div className="flex-1">
             <ProgressLine percent={percent} />
