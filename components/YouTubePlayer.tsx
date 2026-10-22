@@ -20,9 +20,6 @@ import {
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // How long Space must be held before it means "2x while held".
 const HOLD_DELAY_MS = 350;
-// Extra player height above and below the video, cut off by the frame: it
-// hides YouTube's title bar on top and the "More videos" strip on pause.
-const CROP_PX = 72;
 // How long the controls stay after the pointer stops moving over the video.
 const CONTROLS_IDLE_MS = 2500;
 
@@ -174,14 +171,8 @@ export default function YouTubePlayer({
     iframe.allow =
       "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
-    // Centered, no wider than the 16:9 video and CROP_PX taller than the
-    // frame at both ends. Being taller than 16:9, YouTube fits the video to
-    // its width, and its UI at the iframe's top and bottom edges is cut off,
-    // even when the frame (theater mode in a tall window) is taller than the
-    // video.
-    iframe.className = "absolute top-1/2 left-1/2 block -translate-1/2 border-0";
-    iframe.style.width = "min(100cqw, 100cqh * 16 / 9)";
-    iframe.style.height = `calc(100cqh + ${CROP_PX * 2}px)`;
+    // Sized and cropped by .player-frame in globals.css, which keeps
+    // YouTube's title bar and "More videos" strip out of sight.
     container.appendChild(iframe);
 
     void loadYouTubeIframeApi()
@@ -458,7 +449,11 @@ export default function YouTubePlayer({
       onPointerMove={showControlsForAWhile}
       onPointerLeave={hideControls}
     >
-      <div ref={containerRef} className="absolute inset-0 [container-type:size]" />
+      <div className="player-frame">
+        <div ref={containerRef} className="player-video" />
+        <div className="player-cover" data-edge="top" />
+        <div className="player-cover" data-edge="bottom" />
+      </div>
       {/* Takes every click and hover, so YouTube never shows its controls;
           a click plays or pauses. There's no fullscreen: theater mode fills
           the browser window instead. */}

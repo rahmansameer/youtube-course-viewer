@@ -185,6 +185,67 @@ html[data-theme="dark"] .card-tint {
   scrollbar-color: var(--chip-hover) transparent;
 }
 
+/* ---------- Player frame ---------- */
+
+/* The YouTube iframe can't be styled inside, so its UI is cut off instead:
+   the iframe is 72px taller than the video at both ends, and YouTube puts
+   its title bar and "More videos" strip on those edges. Being taller than
+   16:9, YouTube fits the video to the iframe's width. */
+.player-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: size;
+}
+
+/* The video always fills the frame's height, so there's never a gap above
+   or below it: in a wider frame the sides are black, in a slightly taller
+   one (a 16:10 window in theater mode) a little of the sides is cut off... */
+.player-frame > * {
+  --video-w: calc(100cqh * 16 / 9);
+  --video-h: calc(var(--video-w) * 9 / 16);
+}
+
+/* ...unless the frame is much taller than the video (a phone held upright),
+   where filling would cut off most of it: then it fits inside, with black
+   covers over the iframe's edges above and below. */
+@container (aspect-ratio < 4 / 3) {
+  .player-frame > * {
+    --video-w: min(100cqw, 100cqh * 16 / 9);
+  }
+}
+
+.player-video {
+  position: absolute;
+  inset: 0;
+}
+
+.player-video > iframe {
+  position: absolute;
+  top: calc((100cqh - var(--video-h)) / 2 - 72px);
+  left: 50%;
+  display: block;
+  width: var(--video-w);
+  height: calc(var(--video-h) + 144px);
+  border: 0;
+  translate: -50% 0;
+}
+
+.player-cover {
+  position: absolute;
+  inset-inline: 0;
+  height: max(0px, (100cqh - var(--video-h)) / 2);
+  background: #000;
+}
+
+.player-cover[data-edge="top"] {
+  top: 0;
+}
+
+.player-cover[data-edge="bottom"] {
+  bottom: 0;
+}
+
 /* ---------- Watch page layout ---------- */
 
 .watch-grid {

@@ -636,20 +636,25 @@ export default function CoursePage() {
                 onChange={updateNotes}
                 onSeek={(seconds) => playerHandleRef.current?.seekTo(seconds)}
                 onClose={toggleNotes}
+                fillHeight
               />
             ) : null}
+            {/* Notes take the lesson list's place while open; the list stays
+                mounted (hidden) so its scroll and filter are kept. */}
             {course ? (
-              <LessonList
-                title={course.title}
-                channel={course.channel}
-                lessons={lessons}
-                currentLessonId={currentLessonId}
-                percent={summary?.percent ?? 0}
-                completedLessons={summary?.completedLessons ?? 0}
-                menuItems={courseMenuItems}
-                onSelect={goToLesson}
-                onToggleCompleted={toggleLessonCompleted}
-              />
+              <div className={lesson && notesOpen ? "hidden" : "contents"}>
+                <LessonList
+                  title={course.title}
+                  channel={course.channel}
+                  lessons={lessons}
+                  currentLessonId={currentLessonId}
+                  percent={summary?.percent ?? 0}
+                  completedLessons={summary?.completedLessons ?? 0}
+                  menuItems={courseMenuItems}
+                  onSelect={goToLesson}
+                  onToggleCompleted={toggleLessonCompleted}
+                />
+              </div>
             ) : null}
             {course && !isWidePlayer ? (
               <CourseSuggestions excludeKind="playlist" excludeId={course.id} />
