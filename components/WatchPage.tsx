@@ -222,7 +222,6 @@ export default function WatchPage() {
                 onChange={updateNotes}
                 onSeek={(seconds) => playerHandleRef.current?.seekTo(seconds)}
                 onClose={toggleNotes}
-                fillHeight
               />
             ) : null}
             {video && !theater ? (

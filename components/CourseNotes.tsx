@@ -20,11 +20,9 @@ type CourseNotesProps = {
   // Timestamp links in the notes jump the player here.
   onSeek: (seconds: number) => void;
   onClose?: () => void;
-  // Beside the player, match the height of the video, title and channel
-  // row (--primary-height, set by WatchLayout).
-  fillHeight?: boolean;
-  // An exact height in pixels instead, e.g. the lesson list's that the notes
-  // replace on a course, capped the same way that list is.
+  // An exact height in pixels, e.g. the lesson list's that the notes replace
+  // on a course. Without it the notes take a full lesson list's size, so they
+  // look the same on a single video as on a course.
   height?: number | null;
 };
 
@@ -302,7 +300,6 @@ export default function CourseNotes({
   onChange,
   onSeek,
   onClose,
-  fillHeight = false,
   height = null,
 }: CourseNotesProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -388,12 +385,9 @@ export default function CourseNotes({
   return (
     <section
       aria-label="Notes"
-      className={`flex flex-col overflow-hidden rounded-xl border border-line ${
-        height
-          ? "max-h-[min(640px,calc(100dvh-104px))]"
-          : `h-[min(520px,calc(100dvh-140px))] min-h-80 ${
-              fillHeight ? "min-[1016px]:h-(--primary-height) min-[1016px]:min-h-0" : ""
-            }`
+      // The same cap as LessonList's card.
+      className={`flex max-h-[min(640px,calc(100dvh-104px))] flex-col overflow-hidden rounded-xl border border-line ${
+        height ? "" : "h-[min(640px,calc(100dvh-104px))]"
       }`}
       style={height ? { height } : undefined}
     >
