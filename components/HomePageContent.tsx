@@ -404,7 +404,8 @@ function HomePageContent() {
       sortLibrary(
         library.filter(
           (item) =>
-            matchesFilter(item, filter) &&
+            // A search under All covers the whole library, finished courses too.
+            ((filter === "all" && normalizedQuery) || matchesFilter(item, filter)) &&
             (!normalizedQuery ||
               item.title.toLowerCase().includes(normalizedQuery) ||
               item.channel.toLowerCase().includes(normalizedQuery) ||
