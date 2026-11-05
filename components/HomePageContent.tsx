@@ -96,7 +96,8 @@ function errorMessage(error: unknown, fallback: string) {
 function matchesFilter(item: LibraryItem, filter: LibraryFilter) {
   switch (filter) {
     case "all":
-      return true;
+      // Finished courses live under the Completed filter.
+      return item.status !== "completed";
     case "playlists":
       return item.kind === "playlist";
     case "videos":
@@ -502,13 +503,19 @@ function HomePageContent() {
                 <EmptyResults
                   icon="school"
                   title={
-                    filter === "completed"
-                      ? "No completed courses yet"
-                      : filter === "in-progress"
-                        ? "Nothing in progress"
-                        : "Nothing here yet"
+                    filter === "all"
+                      ? "You've finished all your courses"
+                      : filter === "completed"
+                        ? "No completed courses yet"
+                        : filter === "in-progress"
+                          ? "Nothing in progress"
+                          : "Nothing here yet"
                   }
-                  message="Courses move here as you watch them"
+                  message={
+                    filter === "all"
+                      ? "Find them under Completed"
+                      : "Courses move here as you watch them"
+                  }
                 />
               )
             ) : (
