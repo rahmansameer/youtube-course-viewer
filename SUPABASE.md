@@ -13,13 +13,35 @@
 3. Copy `.env.example` to `.env.local` and fill in the project URL and anon
    (publishable) key from **Project Settings → API**.
 4. In **Authentication → URL Configuration**, set the site URL to your app's
-   address and add local/deployed callback URLs if needed.
+   address. Under **Redirect URLs**, add these for each address the app runs
+   at (local and deployed), so the email links come back to the right page:
+   - `https://your-app.example/reset-password` (password reset emails)
+   - `https://your-app.example/account` (email change confirmations)
+
+   For local development that's `http://localhost:3000/reset-password` and
+   `http://localhost:3000/account`. If a reset link lands on the site URL
+   instead, the app still forwards it to the reset page.
 5. Make sure the Email provider is enabled under **Authentication → Sign In /
    Providers**.
 6. Start the app with `npm run dev`, create an account with your email and
    password, then sign in. If email confirmation is enabled, confirm the email
    before signing in. You can turn off email confirmation in Supabase if you
    want to sign up without verifying an email address.
+
+## Account settings
+
+Signed-in users manage their sign-in from **Account menu → Manage account**
+(`/account`):
+
+- **Change email** sends a confirmation link to the new address. With
+  **Authentication → Sign In / Providers → Email → Secure email change** on
+  (the default), the old address gets a link too, and both must be opened.
+- **Change password** asks for the current password first. **Forgot
+  password?** there, or on the sign-in page, emails a reset link that opens
+  `/reset-password` to choose a new one.
+
+Supabase's built-in email sender is rate-limited to a few emails an hour.
+For real use, set up custom SMTP under **Authentication → Emails**.
 
 The Supabase anon/publishable key is intended for browser use; never put a
 service-role key in a `NEXT_PUBLIC_` variable. Row-level security ensures each

@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
 import { Button, Menu } from "@/components/ui";
-import { SIGN_IN_PATH, SIGN_UP_PATH, setAuthSessionHint } from "@/lib/auth-session-hint";
+import {
+  FORGOT_PASSWORD_PATH,
+  RESET_PASSWORD_PATH,
+  SIGN_IN_PATH,
+  SIGN_UP_PATH,
+  setAuthSessionHint,
+} from "@/lib/auth-session-hint";
 import { getSupabaseClient } from "@/lib/supabase";
 
 // Shown in the footer's language menu. Picking one is remembered for the
@@ -23,9 +29,15 @@ const LANGUAGES = [
   "日本語",
 ];
 
+export const MIN_PASSWORD_LENGTH = 6;
+
+export function isValidEmail(email: string) {
+  return /^\S+@\S+\.\S+$/.test(email.trim());
+}
+
 // Material's outlined text field, as on Google's sign-in page: the label sits
 // inside the box and floats onto the border on focus or once filled.
-function Field({
+export function Field({
   id,
   label,
   type,
@@ -80,108 +92,59 @@ function Field({
   );
 }
 
-// The sign-in / sign-up page at /signin and /signup, laid out like Google's account
-// sign-in: a two-column card with the heading on the left and the form on
-// the right. AuthGate sends signed-out visitors here and on once signed in.
-export default function AuthPage({ mode }: { mode: "signin" | "signup" }) {
-  const [isSignUp, setIsSignUpState] = useState(mode === "signup");
-  // Each mode has its own address, like Google's: /signin and /signup. The
-  // switch only rewrites the URL, so whatever was typed stays.
-  const setIsSignUp = (signUp: boolean) => {
-    setIsSignUpState(signUp);
-    try {
-      window.history.replaceState(
-        null,
-        "",
-        `${signUp ? SIGN_UP_PATH : SIGN_IN_PATH}${window.location.search}`,
-      );
-    } catch {
-      // The form still switches; only the address bar stays behind.
-    }
-  };
-  const [verifyEmail, setVerifyEmail] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [emailError, setEmailError] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+export function ShowPasswordToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="mt-4 inline-flex w-fit cursor-pointer items-center gap-4 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-[18px] w-[18px] accent-[var(--fg)]"
+      />
+      Show password
+    </label>
+  );
+}
+
+// The page frame shared by sign in, create account, forgot password and
+// reset password, laid out like Google's account sign-in: a two-column card
+// with the heading on the left and the form (children) on the right, the
+// actions under it, and the language and legal links below the card.
+export function AuthLayout({
+  title,
+  heading,
+  subheading,
+  onSubmit,
+  actions,
+  children,
+}: {
+  title: string;
+  heading: string;
+  subheading?: ReactNode;
+  onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+  actions: ReactNode;
+  children: ReactNode;
+}) {
   const [language, setLanguage] = useState(LANGUAGES[0]);
-
-  const switchMode = () => {
-    setIsSignUp(!isSignUp);
-    setPassword("");
-    setEmailError("");
-    setError("");
-  };
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setEmailError("");
-    setError("");
-
-    if (verifyEmail) {
-      setVerifyEmail("");
-      setIsSignUp(false);
-      return;
-    }
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      setEmailError("Enter a valid email address");
-      return;
-    }
-    if (isSignUp ? password.length < 6 : !password) {
-      setError(isSignUp ? "Use 6 characters or more for your password" : "Enter your password");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const supabase = getSupabaseClient();
-      if (isSignUp) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-        });
-        if (signUpError) {
-          throw signUpError;
-        }
-        if (!data.session) {
-          setAuthSessionHint(null);
-          setVerifyEmail(email.trim());
-        } else {
-          setAuthSessionHint(data.session.user.id);
-        }
-      } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (signInError) {
-          throw signInError;
-        }
-        setAuthSessionHint(data.session?.user.id ?? null);
-      }
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : "Something went wrong. Try again.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const heading = verifyEmail ? "Verify your email" : isSignUp ? "Create an account" : "Sign in";
-  const subheading = verifyEmail
-    ? null
-    : isSignUp
-      ? "Enter your email and a password to get started"
-      : "to continue to Course Viewer";
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-auth-card sm:justify-center sm:bg-auth-bg sm:px-4 sm:py-10">
-      <PageTitle name={isSignUp ? "Create account" : "Sign in"} />
+      <PageTitle name={title} />
       <main className="w-full max-w-[1040px] bg-auth-card px-6 pt-10 pb-8 sm:rounded-[28px] sm:p-9">
-        <form onSubmit={handleSubmit} noValidate className="grid gap-x-12 gap-y-8 md:grid-cols-2">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit?.(event);
+          }}
+          noValidate
+          className="grid gap-x-12 gap-y-8 md:grid-cols-2"
+        >
           <div>
             <img src="/logo.png" alt="Course Viewer" width={47} height={40} className="h-10 w-auto" />
             <h1 className="mt-6 text-[32px] leading-10 font-normal sm:text-[36px] sm:leading-[44px]">
@@ -191,59 +154,8 @@ export default function AuthPage({ mode }: { mode: "signin" | "signup" }) {
           </div>
 
           <div className="flex flex-col md:pt-[76px]">
-            {verifyEmail ? (
-              <p className="text-sm text-fg">
-                We sent a confirmation link to <span className="font-medium">{verifyEmail}</span>.
-                Open it, then come back and sign in.
-              </p>
-            ) : (
-              <div className="space-y-6">
-                <Field
-                  id="auth-email"
-                  label="Email"
-                  type="email"
-                  value={email}
-                  onChange={setEmail}
-                  autoComplete="email"
-                  autoFocus
-                  error={emailError}
-                />
-                <div>
-                  <Field
-                    id="auth-password"
-                    label="Password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={setPassword}
-                    autoComplete={isSignUp ? "new-password" : "current-password"}
-                    error={error}
-                  />
-                  <label className="mt-4 inline-flex w-fit cursor-pointer items-center gap-4 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={showPassword}
-                      onChange={(event) => setShowPassword(event.target.checked)}
-                      className="h-[18px] w-[18px] accent-[var(--fg)]"
-                    />
-                    Show password
-                  </label>
-                  {isSignUp && !error ? (
-                    <p className="mt-2 text-xs text-fg-muted">Use 6 or more characters.</p>
-                  ) : null}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-10 flex items-center justify-end gap-2">
-              {verifyEmail ? null : (
-                <Button variant="text" onClick={switchMode}>
-                  {isSignUp ? "Sign in instead" : "Create account"}
-                </Button>
-              )}
-              <Button type="submit" variant="primary" disabled={submitting} className="h-10 px-6">
-                {submitting ? "Please wait..." : verifyEmail ? "Sign in" : "Next"}
-              </Button>
-            </div>
+            {children}
+            <div className="mt-10 flex items-center justify-end gap-2">{actions}</div>
           </div>
         </form>
       </main>
@@ -282,5 +194,228 @@ export default function AuthPage({ mode }: { mode: "signin" | "signup" }) {
         </nav>
       </footer>
     </div>
+  );
+}
+
+// Sends the password reset email. Its link opens /reset-password signed in.
+export async function sendPasswordResetEmail(email: string) {
+  const { error } = await getSupabaseClient().auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${window.location.origin}${RESET_PASSWORD_PATH}`,
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+type AuthMode = "signin" | "signup" | "forgot";
+
+const MODE_PATHS: Record<AuthMode, string> = {
+  signin: SIGN_IN_PATH,
+  signup: SIGN_UP_PATH,
+  forgot: FORGOT_PASSWORD_PATH,
+};
+
+// The sign-in, create account and forgot password pages at /signin, /signup
+// and /forgot-password. AuthGate sends signed-out visitors here and on once
+// signed in.
+export default function AuthPage({ mode: initialMode }: { mode: AuthMode }) {
+  const [mode, setModeState] = useState<AuthMode>(initialMode);
+  // Each mode has its own address, like Google's. The switch only rewrites
+  // the URL, so whatever was typed stays.
+  const setMode = (next: AuthMode) => {
+    setModeState(next);
+    try {
+      window.history.replaceState(null, "", `${MODE_PATHS[next]}${window.location.search}`);
+    } catch {
+      // The form still switches; only the address bar stays behind.
+    }
+  };
+  const isSignUp = mode === "signup";
+  const isForgot = mode === "forgot";
+  // Set once an email went out: the confirmation (sign up) or reset link.
+  const [verifyEmail, setVerifyEmail] = useState("");
+  const [resetSentTo, setResetSentTo] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setPassword("");
+    setEmailError("");
+    setError("");
+    setResetSentTo("");
+  };
+
+  const handleSubmit = async () => {
+    setEmailError("");
+    setError("");
+
+    if (verifyEmail || resetSentTo) {
+      setVerifyEmail("");
+      switchMode("signin");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setEmailError("Enter a valid email address");
+      return;
+    }
+    if (!isForgot && (isSignUp ? password.length < MIN_PASSWORD_LENGTH : !password)) {
+      setError(
+        isSignUp
+          ? `Use ${MIN_PASSWORD_LENGTH} characters or more for your password`
+          : "Enter your password",
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const supabase = getSupabaseClient();
+      if (isForgot) {
+        await sendPasswordResetEmail(email);
+        setResetSentTo(email.trim());
+      } else if (isSignUp) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
+        if (signUpError) {
+          throw signUpError;
+        }
+        if (!data.session) {
+          setAuthSessionHint(null);
+          setVerifyEmail(email.trim());
+        } else {
+          setAuthSessionHint(data.session.user.id);
+        }
+      } else {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError) {
+          throw signInError;
+        }
+        setAuthSessionHint(data.session?.user.id ?? null);
+      }
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error ? submitError.message : "Something went wrong. Try again.";
+      if (isForgot) {
+        setEmailError(message);
+      } else {
+        setError(message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sent = verifyEmail || resetSentTo;
+  const heading = verifyEmail
+    ? "Verify your email"
+    : resetSentTo
+      ? "Check your email"
+      : isForgot
+        ? "Account recovery"
+        : isSignUp
+          ? "Create an account"
+          : "Sign in";
+  const subheading = sent
+    ? null
+    : isForgot
+      ? "Enter your email and we'll send you a link to reset your password"
+      : isSignUp
+        ? "Enter your email and a password to get started"
+        : "to continue to Course Viewer";
+
+  return (
+    <AuthLayout
+      title={isForgot ? "Account recovery" : isSignUp ? "Create account" : "Sign in"}
+      heading={heading}
+      subheading={subheading}
+      onSubmit={() => void handleSubmit()}
+      actions={
+        <>
+          {sent ? null : isForgot ? (
+            <Button variant="text" onClick={() => switchMode("signin")}>
+              Back to sign in
+            </Button>
+          ) : (
+            <Button variant="text" onClick={() => switchMode(isSignUp ? "signin" : "signup")}>
+              {isSignUp ? "Sign in instead" : "Create account"}
+            </Button>
+          )}
+          <Button type="submit" variant="primary" disabled={submitting} className="h-10 px-6">
+            {submitting
+              ? "Please wait..."
+              : sent
+                ? "Sign in"
+                : isForgot
+                  ? "Send link"
+                  : "Next"}
+          </Button>
+        </>
+      }
+    >
+      {verifyEmail ? (
+        <p className="text-sm text-fg">
+          We sent a confirmation link to <span className="font-medium">{verifyEmail}</span>.
+          Open it, then come back and sign in.
+        </p>
+      ) : resetSentTo ? (
+        <p className="text-sm text-fg">
+          If an account uses <span className="font-medium">{resetSentTo}</span>, we sent it a
+          link to reset your password. Open it on this device to choose a new password.
+        </p>
+      ) : (
+        <div className="space-y-6">
+          <Field
+            id="auth-email"
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
+            autoFocus
+            error={emailError}
+          />
+          {isForgot ? null : (
+            <div>
+              <Field
+                id="auth-password"
+                label="Password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={setPassword}
+                autoComplete={isSignUp ? "new-password" : "current-password"}
+                error={error}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-x-4">
+                <ShowPasswordToggle checked={showPassword} onChange={setShowPassword} />
+                {isSignUp ? null : (
+                  <button
+                    type="button"
+                    onClick={() => switchMode("forgot")}
+                    className="mt-4 rounded text-sm font-medium text-link hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              {isSignUp && !error ? (
+                <p className="mt-2 text-xs text-fg-muted">
+                  Use {MIN_PASSWORD_LENGTH} or more characters.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+    </AuthLayout>
   );
 }

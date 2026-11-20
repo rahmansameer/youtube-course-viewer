@@ -16,10 +16,16 @@ import Icon from "@/components/Icon";
 import PageTitle from "@/components/PageTitle";
 import { HomeThemeProvider } from "@/components/HomeTheme";
 import {
+  clearAuthRedirectHash,
   isAuthPath,
+  readAuthRedirectResult,
   readAuthSessionHint,
+  readPasswordRecovery,
+  RESET_PASSWORD_PATH,
   SIGN_IN_PATH,
   setAuthSessionHint,
+  setPasswordRecovery,
+  type AuthRedirectResult,
 } from "@/lib/auth-session-hint";
 import { getSupabaseClient, type SupabaseClient } from "@/lib/supabase";
 import { clearCachedVideos } from "@/lib/storage";
@@ -28,6 +34,12 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   cachedUserIdHint: string | null;
+  // What the email link this visit opened with reported, if anything.
+  redirectResult: AuthRedirectResult;
+  // Signed in by a password reset link, so a new password can be set
+  // without the current one.
+  recovering: boolean;
+  endRecovery: () => void;
   signOut: () => Promise<void>;
 };
 
@@ -74,6 +86,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthPage = isAuthPath(pathname);
+  const isResetPage = pathname === RESET_PASSWORD_PATH;
+  // Read before the Supabase client below exists, since it clears the hash.
+  const [redirectResult] = useState(readAuthRedirectResult);
+  // Signed in by a password reset link: finish on the reset page.
+  const [recovering, setRecovering] = useState(
+    () => redirectResult.recovery || readPasswordRecovery(),
+  );
   // The layout is static, so the session hint cookie is read in the browser.
   const isHydrated = useSyncExternalStore(
     subscribeToNothing,
@@ -96,6 +115,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (redirectResult.error || redirectResult.message) {
+      const timeout = setTimeout(clearAuthRedirectHash, 0);
+      return () => clearTimeout(timeout);
+    }
+  }, [redirectResult]);
+
+  useEffect(() => {
     if (supabase instanceof Error) {
       setAuthError(supabase.message);
       setLoading(false);
@@ -103,7 +129,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setPasswordRecovery(true);
+          setRecovering(true);
+        } else if (event === "SIGNED_OUT") {
+          setPasswordRecovery(false);
+          setRecovering(false);
+        }
         setUser(session?.user ?? null);
         setAuthSessionHint(session?.user.id ?? null);
         setLoading(false);
@@ -154,6 +187,17 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     if (loading || authError) {
       return;
     }
+    if (recovering && user) {
+      // A reset link that Supabase sent to the site URL instead of
+      // /reset-password (it isn't in the allowed redirect URLs).
+      if (!isResetPage) {
+        router.replace(RESET_PASSWORD_PATH);
+      }
+      return;
+    }
+    if (isResetPage) {
+      return;
+    }
     if (!user && !isAuthPage) {
       const next = `${window.location.pathname}${window.location.search}`;
       router.replace(
@@ -162,7 +206,31 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     } else if (user && isAuthPage) {
       router.replace(readNextPath());
     }
-  }, [authError, isAuthPage, loading, router, user]);
+  }, [authError, isAuthPage, isResetPage, loading, recovering, router, user]);
+
+  const contextValue = (cachedUserIdHint: string | null): AuthContextValue => ({
+    user,
+    loading,
+    cachedUserIdHint,
+    redirectResult,
+    recovering,
+    endRecovery: () => {
+      setPasswordRecovery(false);
+      setRecovering(false);
+    },
+    signOut,
+  });
+
+  if (isResetPage && !authError) {
+    if (loading) {
+      return <Spinner />;
+    }
+    return (
+      <AuthContext.Provider value={contextValue(null)}>
+        <HomeThemeProvider>{children}</HomeThemeProvider>
+      </AuthContext.Provider>
+    );
+  }
 
   if (isAuthPage) {
     if (loading) {
@@ -176,9 +244,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   if (loading) {
     if (isHydrated && hasStoredSession) {
       return (
-        <AuthContext.Provider
-          value={{ user, loading, cachedUserIdHint: storedUserIdHint, signOut }}
-        >
+        <AuthContext.Provider value={contextValue(storedUserIdHint)}>
           <HomeThemeProvider>{children}</HomeThemeProvider>
         </AuthContext.Provider>
       );
@@ -187,9 +253,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     // Watch pages are server-rendered shells, safe to show before hydration.
     if (pathname === "/watch" || pathname === "/course") {
       return (
-        <AuthContext.Provider
-          value={{ user, loading, cachedUserIdHint: storedUserIdHint, signOut }}
-        >
+        <AuthContext.Provider value={contextValue(storedUserIdHint)}>
           <HomeThemeProvider>{children}</HomeThemeProvider>
         </AuthContext.Provider>
       );
@@ -213,9 +277,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider
-      value={{ user, loading, cachedUserIdHint: null, signOut }}
-    >
+    <AuthContext.Provider value={contextValue(null)}>
       {user ? <HomeThemeProvider>{children}</HomeThemeProvider> : <Spinner />}
     </AuthContext.Provider>
   );

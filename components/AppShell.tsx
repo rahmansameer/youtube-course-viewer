@@ -95,6 +95,7 @@ function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }) {
           onSelect: () => setThemeMode(mode),
         })),
         "divider" as const,
+        { label: "Manage account", icon: "settings" as IconName, href: "/account" },
         { label: "Keyboard shortcuts", icon: "keyboard" as IconName, onSelect: onShowShortcuts },
         {
           label: "Sign out",
